@@ -56,7 +56,7 @@ The camera is operated via Ethernet (PoE-enabled) and, after pairing, registers 
 
 ---
 
-## Error codes (displayed on the screen)
+## Error codes (blinking LED n times)
 The firmware displays various error states:
 
 | Code | Meaning |
@@ -66,8 +66,6 @@ The firmware displays various error states:
 | 03 | Invalid QR code |
 | 04 | Connection to Prusa Connect failed |
 | 05 | Snapshot upload failed |
-
-*(The exact list corresponds to the comments in the source code.)*
 
 ---
 
