@@ -68,8 +68,6 @@ Die Firmware zeigt verschiedene Fehlerzustände an:
 | 04   | Verbindung zu Prusa Connect fehlgeschlagen |
 | 05   | Upload Snapshot fehlgeschlagen |
 
-*(Die genaue Liste entspricht den Kommentaren im Quellcode.)*  
-
 ---
 
 ## Bekannte Einschränkungen
