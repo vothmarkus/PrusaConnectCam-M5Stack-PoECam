@@ -57,7 +57,7 @@ Die Kamera wird über Ethernet (PoE-fähig) betrieben und meldet sich nach der K
 
 ---
 
-## Fehlercodes (Anzeige im Display)
+## Fehlercodes (Anzeige durch mehrfaches Blinken)
 Die Firmware zeigt verschiedene Fehlerzustände an:  
 
 | Code | Bedeutung |
