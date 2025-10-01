@@ -1,5 +1,7 @@
 # PrusaConnectCam – M5Stack PoE-CAM
 
+[English version](README_en.md)
+
 Dieses Projekt verbindet eine **M5Stack PoE-CAM** direkt mit **Prusa Connect**.  
 Die Kamera wird über Ethernet (PoE-fähig) betrieben und meldet sich nach der Kopplung als **externe Kamera** am Drucker in Prusa Connect an.  
 
