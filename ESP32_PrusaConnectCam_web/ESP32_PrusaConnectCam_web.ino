@@ -4,23 +4,24 @@
    Project: ESP32 PrusaConnect Camera
    Author: Markus Voth
    e-mail: vothmarkus@gmail.com
-   Version 1.1
+   Version 1.2 (NTP sync)
 
    Press and hold the button briefly until the LED flashes slowly to activate QR detection mode.
    Press and hold the button for 5 seconds while it flashes quickly to restart the MCU.
-   If set correctly, a photo will be taken every 10s while the LED flashes for 1s to confirm.
+   If set correctly, a photo will be taken every 10s (synchronized to NTP) while the LED flashes for 1s to confirm.
 
-   There are several ERROR flash codes that cause the LED to light up briefly
-   - 2: CONNECTION FAILED:        Check the internet connection to prusa.com
-   - 3: NOT AUTHORIZED:           The token used by the camera has been deleted. Set up a new camera in prusa connect.
-   - 4: FORBIDDEN FINGERPRINT:    The token has already been used by another camera. Set up a new camera in prusa connect.
-   - 5: INVALID TOKEN DATA:       No token is stored in the camera. Enter QR detection mode and scan a new QR token.
-   - 6: INVALID FINGERPRINT DATA: No fingerprint is stored in the camera. Erase all FLASH memory and re-flash camera firmware.
+   ERROR flash codes:
+   - 2: CONNECTION FAILED
+   - 3: NOT AUTHORIZED
+   - 4: FORBIDDEN FINGERPRINT
+   - 5: INVALID TOKEN DATA
+   - 6: INVALID FINGERPRINT DATA
 */
 
 /* includes */
 #include <Ticker.h>
 #include "Arduino.h"
+#include <time.h>              // ⬅️ für NTP sync
 
 #include "server.h"
 #include "cfg.h"
@@ -37,7 +38,6 @@ void blinking()
 void blinkTimes()
 {
     digitalWrite(LED_PIN, bool((blinkCounter+1)%2));
-    Serial.println("BLINK COUNTER: " + String(blinkCounter));
     if(blinkCounter > 0)
       --blinkCounter;
     else
@@ -45,7 +45,6 @@ void blinkTimes()
         blinker.detach();
         digitalWrite(LED_PIN, 1-LOW);
     }
-
     return;
 }
 
@@ -62,10 +61,10 @@ void GPIO_Init()
     return;
 }
 
-void getGPIOreset()
+void getGPIOreset() //Flip image horrizontally and reboot
 {
     /* remember call time */
-    lastMillis = millis();
+    uint32_t resetStart = millis();
         
     /* blink quickly */
     blinker.attach(0.1, blinking);
@@ -73,9 +72,11 @@ void getGPIOreset()
     /* reboot ESP when holding button for 5s */
     while(!digitalRead(BUTTON_PIN))
     {
-        
-        if(millis() > lastMillis + 5*1000)
-          ESP.restart();
+        if(millis() > resetStart + 5*1000)
+        {
+            Cfg_ToggleHmirror();
+            ESP.restart();
+        }
         delay(0);
     }
 
@@ -106,6 +107,8 @@ void onEvent(arduino_event_id_t event, arduino_event_info_t info)
       
       // Set Ethernet hostname here
       ETH.setHostname(EthernetDeciveName.c_str());
+      Serial.println("ETH MAC: " + EthernetMacAddr);
+      Serial.println("ETH Name: " + EthernetDeciveName);
       break;
     case ARDUINO_EVENT_ETH_CONNECTED:
       Serial.println("ETH Connected");
@@ -137,11 +140,9 @@ void ETH_Init()
     Network.onEvent(onEvent);
     SPI.begin(ETH_SPI_SCK, ETH_SPI_MISO, ETH_SPI_MOSI, ETH_PHY_CS);
     ETH.begin(ETH_PHY_TYPE, ETH_PHY_ADDR, ETH_PHY_CS, ETH_PHY_IRQ, ETH_PHY_RST, SPI);
-
-    Serial.println("ETH MAC: " + EthernetMacAddr);
-    Serial.println("ETH Name: " + EthernetDeciveName);
 }
 
+// --- QR-Code Handling ---
 void getQR()
 {
     Camera_Reinit(0, true);
@@ -168,6 +169,22 @@ void getQR()
     return;
 }
 
+// --- NTP Setup ---
+#define MY_TZ  "CET-1CEST,M3.5.0,M10.5.0/3"
+int lastPhotoSecond = -1;
+
+void NTP_Init()
+{
+    configTzTime(MY_TZ, "pool.ntp.org", "time.nist.gov");
+    struct tm timeinfo;
+    while (!getLocalTime(&timeinfo)) {
+        Serial.println("Waiting for NTP time...");
+        delay(500);
+    }
+    Serial.println("Time synchronized!");
+}
+
+// --- Main setup ---
 void setup() {
   /* Serial port for debugging purposes */
   Serial.begin(SERIAL_PORT_SPEER);
@@ -187,16 +204,20 @@ void setup() {
   /* ethernet init */
   ETH_Init();
 
+  /* NTP init */
+  NTP_Init();
+
   Serial.println("MCU configuration done!");
 }
 
 SET_LOOP_TASK_STACK_SIZE(40*1024); //40KB stack for QR-Code lib "quirc"
 
+// --- Main loop ---
 void loop()
 {
     if(!eth_connected)
     {
-        /* ethernet not connetcted: blink slowly*/
+        /* ethernet not connected: blink slowly*/
         if(!blinkCounter)
         {
             blinkCounter = 1;
@@ -210,10 +231,12 @@ void loop()
         blinker.detach();
         digitalWrite(LED_PIN, 1-LOW);
 
-        /* time for a photo! */
-        if(millis() > lastMillis + 1000*RefreshInterval)
-        {
-            lastMillis = millis();
+        /* time-synchronized photo every 10s */
+        struct tm timeinfo;
+        if (getLocalTime(&timeinfo)) {
+          int sec = timeinfo.tm_sec;
+          if (sec % 10 == 0 && sec != lastPhotoSecond) {
+            lastPhotoSecond = sec;
 
             Camera_CapturePhoto();
 
@@ -231,6 +254,7 @@ void loop()
                 blinkCounter = 2;
                 blinker.attach(0.5, blinkTimes);
             }
+          }
         }
     }
     

@@ -49,6 +49,7 @@ void Cfg_LoadExposureCtrl();
 void Cfg_LoadCameraFlash();
 void Cfg_LoadCameraFlashDuration();
 
+void Cfg_ToggleHmirror();
 #endif
 
 /* EOF */

@@ -408,4 +408,22 @@ void Cfg_LoadCameraFlashDuration() {
   Serial.println(CameraCfg.CameraFlashDuration);
 }
 
+/* toggle horizontal flip (hmirror) and save to EEPROM */
+void Cfg_ToggleHmirror() {
+  bool newState = !CameraCfg.hmirror;  // toggle
+  
+  Serial.print("Toggle Hmirror from ");
+  Serial.print(CameraCfg.hmirror);
+  Serial.print(" to ");
+  Serial.println(newState);
+
+  // In RAM aktualisieren
+  CameraCfg.hmirror = newState;
+
+  // In EEPROM speichern
+  Cfg_SaveHmirror(newState);
+
+  Serial.println("Saved new Hmirror state to EEPROM (apply on next boot).");
+}
+
 /* EOF */
