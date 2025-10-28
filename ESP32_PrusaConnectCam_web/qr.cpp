@@ -31,18 +31,29 @@ String qrCodeDetect()
 
     for (int i = 0; i < count; i++)
     {
-
       struct quirc_code code;
       struct quirc_data data;
-      quirc_extract(qr, i, &code);
+      quirc_decode_error_t err;
       
-      if(!quirc_decode(&code, &data))
+      quirc_extract(qr, i, &code);
+      err = quirc_decode(&code, &data);
+      if(err == QUIRC_ERROR_DATA_ECC)
+      {
+          quirc_flip(&code);
+          err = quirc_decode(&code, &data);
+      }
+      if(!err)
       {
           Serial.print("Payload: ");
           Serial.println((const char *)data.payload);
           token = extractToken(String((const char *)data.payload));
           Serial.println("Token: " + token);
       }
+      else
+      {
+          Serial.print("DECODE FAILED: ");
+          Serial.println(quirc_strerror(err));
+      }    
     }
 
     image = NULL;  
@@ -63,3 +74,4 @@ String extractToken(String url)
 }
 
 /* EOF */
+
