@@ -117,6 +117,7 @@ void onEvent(arduino_event_id_t event, arduino_event_info_t info)
       Serial.println("ETH Got IP: " + String(esp_netif_get_desc(info.got_ip.esp_netif)));
       Serial.println(ETH);
       eth_connected = true;
+      NTP_Init();
       break;
     case ARDUINO_EVENT_ETH_LOST_IP:
       Serial.println("ETH Lost IP");
@@ -203,9 +204,6 @@ void setup() {
   
   /* ethernet init */
   ETH_Init();
-
-  /* NTP init */
-  NTP_Init();
 
   Serial.println("MCU configuration done!");
 }
