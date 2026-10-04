@@ -56,6 +56,8 @@ Unter [`docs/index.html`](docs/index.html) liegt ein browserbasierter Flasher au
 
 Für den Web-Flasher wird weiterhin der externe ESP32-Downloader/PoE-CAM-Adapter benötigt. Die Seite muss über **HTTPS** ausgeliefert werden, beispielsweise über GitHub Pages; lokal per `file://` steht Web Serial nicht zuverlässig zur Verfügung.
 
+**Android:** Chrome unterstützt die Web Serial API seit Version 148 auch auf Android. Der Flasher verwendet dort bewusst denselben bereits funktionierenden Web-Serial-Pfad wie am Desktop; es gibt keinen separaten experimentellen Flash-Algorithmus. Benötigt werden ein Android-Gerät mit USB-Host/OTG, ein Datenkabel/Adapter und der M5Stack-Downloader. Die Seite zeigt direkt an, ob `navigator.serial` im verwendeten Browser verfügbar ist.
+
 ## Koppeln und bedienen
 
 1. In Prusa Connect den Drucker öffnen und eine externe Kamera hinzufügen. Den dort angebotenen Kopplungs-QR-Code anzeigen.
