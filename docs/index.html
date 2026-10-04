@@ -1,0 +1,220 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>PrusaConnectCam – M5Stack PoE-CAM Web-Flasher</title>
+  <meta name="description" content="Web-Flasher für PrusaConnectCam auf der M5Stack Unit PoE CAM.">
+  <style>
+    :root { color-scheme: light dark; font-family: system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+    body { margin:0; background:#111827; color:#f9fafb; }
+    main { max-width:860px; margin:0 auto; padding:32px 18px 56px; }
+    h1 { font-size:clamp(1.8rem,5vw,2.7rem); margin-bottom:.35rem; }
+    h2 { margin-top:0; font-size:1.25rem; }
+    p,li { line-height:1.55; }
+    .muted { color:#cbd5e1; }
+    .card { background:#1f2937; border:1px solid #374151; border-radius:16px; padding:20px; margin:18px 0; }
+    .safe { border-color:#166534; }
+    .danger { border-color:#991b1b; }
+    button,select { font:inherit; }
+    button { border:0; border-radius:10px; padding:12px 16px; font-weight:700; cursor:pointer; }
+    button:disabled { opacity:.5; cursor:not-allowed; }
+    .update { background:#22c55e; color:#052e16; }
+    .install { background:#ef4444; color:white; }
+    .secondary { background:#475569; color:white; }
+    .row { display:flex; gap:12px; flex-wrap:wrap; align-items:center; }
+    label { display:flex; gap:8px; align-items:center; }
+    progress { width:100%; height:18px; margin-top:14px; }
+    #status { white-space:pre-wrap; background:#0b1020; border-radius:10px; padding:12px; min-height:56px; overflow:auto; }
+    code { background:#0b1020; padding:.15em .35em; border-radius:5px; }
+    a { color:#93c5fd; }
+    .warning { color:#fecaca; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>PrusaConnectCam Web-Flasher</h1>
+  <p class="muted">M5Stack Unit PoE CAM · Firmware 1.3.0 · ESP32</p>
+
+  <div class="card">
+    <h2>Vorbereitung</h2>
+    <ol>
+      <li>PoE-CAM über einen geeigneten ESP32-Downloader/PoE-CAM-Adapter mit dem Computer verbinden.</li>
+      <li>Chrome oder Edge verwenden. Web Serial benötigt HTTPS.</li>
+      <li>Für bereits gekoppelte Kameras ausschließlich <strong>Update</strong> verwenden.</li>
+    </ol>
+    <div class="row">
+      <label>Baudrate
+        <select id="baud">
+          <option value="460800" selected>460800</option>
+          <option value="115200">115200</option>
+        </select>
+      </label>
+    </div>
+  </div>
+
+  <div class="card safe">
+    <h2>Bestehende Kamera aktualisieren</h2>
+    <p>Schreibt nur <code>ESP32_PrusaConnectCam_web.ino.bin</code> nach <code>0x10000</code>. <strong>Kein vollständiges Löschen.</strong> Die gespeicherte Kopplung bleibt erhalten.</p>
+    <button id="update" class="update">Kamera auf 1.3.0 aktualisieren</button>
+  </div>
+
+  <div class="card danger">
+    <h2>Vollständige Neuinstallation</h2>
+    <p class="warning"><strong>Achtung:</strong> Löscht den gesamten Flash und schreibt das 4-MB-Merged-Image nach <code>0x0</code>. Token/Fingerprint und Kopplung gehen verloren.</p>
+    <label><input id="confirmErase" type="checkbox"> Ich verstehe, dass die gespeicherte Kopplung gelöscht wird.</label>
+    <p><button id="install" class="install" disabled>Flash löschen und 1.3.0 neu installieren</button></p>
+  </div>
+
+  <div class="card">
+    <h2>Status</h2>
+    <progress id="progress" value="0" max="100"></progress>
+    <pre id="status">Bereit.</pre>
+    <div class="row">
+      <button id="reset" class="secondary" disabled>Gerät neu starten</button>
+      <button id="disconnect" class="secondary" disabled>Trennen</button>
+    </div>
+  </div>
+
+  <p class="muted">Die Firmwaredateien werden vor dem Flashen per SHA-256 geprüft. Diese Seite sendet keine Zugangsdaten oder Kamera-Token.</p>
+</main>
+
+<script type="module">
+  import { ESPLoader, Transport } from "https://unpkg.com/esptool-js@0.7.0/bundle.js";
+
+  const BASE = "https://raw.githubusercontent.com/vothmarkus/PrusaConnectCam-M5Stack-PoECam/main/ESP32_PrusaConnectCam_web/build/m5stack.esp32.m5stack_poe_cam/";
+  const FW = {
+    update: {
+      file: "ESP32_PrusaConnectCam_web.ino.bin",
+      address: 0x10000,
+      bytes: 869920,
+      sha256: "9d0498dd072bf081557e73b9fab0bb50bfa1039bd5d4b07de19cd6ae33267736",
+      eraseAll: false
+    },
+    install: {
+      file: "ESP32_PrusaConnectCam_web.ino.merged.bin",
+      address: 0x0,
+      bytes: 4194304,
+      sha256: "92c741b8641ff1e5db46477f655e69c87fab6c335c4bdc0d6319424238a844d2",
+      eraseAll: true
+    }
+  };
+
+  const $ = (id) => document.getElementById(id);
+  const status = $("status");
+  const progress = $("progress");
+  let transport = null;
+  let loader = null;
+  let busy = false;
+
+  function log(message) {
+    status.textContent += "\n" + message;
+    status.scrollTop = status.scrollHeight;
+  }
+  function setStatus(message) { status.textContent = message; }
+  function setBusy(value) {
+    busy = value;
+    $("update").disabled = value;
+    $("install").disabled = value || !$("confirmErase").checked;
+    $("baud").disabled = value;
+  }
+  function hex(buffer) {
+    return [...new Uint8Array(buffer)].map(b => b.toString(16).padStart(2, "0")).join("");
+  }
+  async function fetchAndVerify(info) {
+    setStatus("Firmware wird geladen …");
+    const response = await fetch(BASE + info.file, { cache: "no-store" });
+    if (!response.ok) throw new Error("Firmware-Download fehlgeschlagen: HTTP " + response.status);
+    const data = new Uint8Array(await response.arrayBuffer());
+    if (data.byteLength !== info.bytes) throw new Error("Unerwartete Dateigröße: " + data.byteLength + " statt " + info.bytes);
+    const digest = hex(await crypto.subtle.digest("SHA-256", data));
+    if (digest !== info.sha256) throw new Error("SHA-256-Prüfung fehlgeschlagen. Flashen abgebrochen.");
+    log("SHA-256 geprüft: OK");
+    return data;
+  }
+  async function connect() {
+    if (!("serial" in navigator)) throw new Error("Web Serial wird von diesem Browser nicht unterstützt. Bitte Chrome oder Edge verwenden.");
+    const port = await navigator.serial.requestPort();
+    transport = new Transport(port, true);
+    loader = new ESPLoader({
+      transport,
+      baudrate: Number($("baud").value),
+      terminal: {
+        clean() {},
+        writeLine(data) { log(data); },
+        write(data) { log(data); }
+      },
+      debugLogging: false
+    });
+    const chip = await loader.main();
+    log("Verbunden: " + chip);
+    if (!String(chip).toUpperCase().includes("ESP32")) {
+      throw new Error("Unerwarteter Chip: " + chip + ". Erwartet wird ESP32.");
+    }
+    $("reset").disabled = false;
+    $("disconnect").disabled = false;
+  }
+  async function cleanup() {
+    try { if (transport) await transport.disconnect(); } catch (_) {}
+    transport = null;
+    loader = null;
+    $("reset").disabled = true;
+    $("disconnect").disabled = true;
+  }
+  async function flash(kind) {
+    if (busy) return;
+    const info = FW[kind];
+    setBusy(true);
+    progress.value = 0;
+    try {
+      const data = await fetchAndVerify(info);
+      log("Programmer auswählen …");
+      await connect();
+      if (kind === "update") {
+        log("Update-Modus: eraseAll = false, Zieladresse 0x10000.");
+      } else {
+        log("Neuinstallation: vollständiges Löschen aktiviert, Zieladresse 0x0.");
+      }
+      await loader.writeFlash({
+        fileArray: [{ data, address: info.address }],
+        flashMode: "dio",
+        flashFreq: "80m",
+        flashSize: "4MB",
+        eraseAll: info.eraseAll,
+        compress: true,
+        reportProgress: (_fileIndex, written, total) => {
+          progress.value = total ? Math.round(written * 100 / total) : 0;
+        }
+      });
+      progress.value = 100;
+      log("Flashen erfolgreich abgeschlossen.");
+      log("Gerät wird neu gestartet …");
+      await loader.after("hard_reset");
+      log("Fertig. Nach dem Neustart den Bild-Upload in Prusa Connect prüfen.");
+    } catch (err) {
+      log("FEHLER: " + (err?.message || String(err)));
+      log("Bei Verbindungsproblemen 115200 Baud wählen und erneut versuchen.");
+    } finally {
+      await cleanup();
+      setBusy(false);
+    }
+  }
+
+  $("confirmErase").addEventListener("change", () => {
+    $("install").disabled = busy || !$("confirmErase").checked;
+  });
+  $("update").addEventListener("click", () => flash("update"));
+  $("install").addEventListener("click", () => {
+    if (!$("confirmErase").checked) return;
+    flash("install");
+  });
+  $("reset").addEventListener("click", async () => {
+    try { await loader?.after("hard_reset"); log("Reset ausgelöst."); } catch (e) { log("Reset fehlgeschlagen: " + e); }
+  });
+  $("disconnect").addEventListener("click", async () => {
+    await cleanup();
+    log("Verbindung getrennt.");
+  });
+</script>
+</body>
+</html>
