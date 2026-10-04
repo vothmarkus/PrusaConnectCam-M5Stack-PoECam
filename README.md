@@ -43,7 +43,18 @@ Für die **Erstinstallation** stattdessen:
 python -m esptool --chip esp32 --port /dev/ttyUSB0 --baud 460800 write_flash 0x0 ESP32_PrusaConnectCam_web.ino.merged.bin
 ```
 
-Danach die Kamera neu starten. Bei Verbindungsproblemen zum Programmer mit `--baud 115200` wiederholen. Web-Flasher eignen sich nur, wenn sie den benötigten Offset und das gewünschte Löschverhalten unterstützen. [Prüfsummen und Build-Metadaten](ESP32_PrusaConnectCam_web/build/m5stack.esp32.m5stack_poe_cam/) liegen bei den BIN-Dateien. Der alte Verzeichnisname bleibt für bestehende Download-Links erhalten.
+Danach die Kamera neu starten. Bei Verbindungsproblemen zum Programmer mit `--baud 115200` wiederholen. [Prüfsummen und Build-Metadaten](ESP32_PrusaConnectCam_web/build/m5stack.esp32.m5stack_poe_cam/) liegen bei den BIN-Dateien. Der alte Verzeichnisname bleibt für bestehende Download-Links erhalten.
+
+### Web-Flasher
+
+Unter [`docs/index.html`](docs/index.html) liegt ein browserbasierter Flasher auf Basis von **Espressif esptool-js 0.7.0**. Er trennt die beiden Anwendungsfälle bewusst:
+
+- **Bestehende Kamera aktualisieren:** schreibt ausschließlich die App-BIN nach `0x10000` mit `eraseAll: false`. Der Einstellungsbereich wird nicht vollständig gelöscht.
+- **Vollständige Neuinstallation:** löscht den Flash und schreibt das Merged-Image nach `0x0`. Token/Fingerprint und Kopplung gehen verloren.
+- Vor dem Flashen werden Dateigröße und **SHA-256** gegen die zu Firmware 1.3.0 gehörenden Build-Metadaten geprüft.
+- Standardbaudrate ist 460800; bei Verbindungsproblemen kann direkt auf 115200 umgestellt werden.
+
+Für den Web-Flasher wird weiterhin der externe ESP32-Downloader/PoE-CAM-Adapter benötigt. Die Seite muss über **HTTPS** ausgeliefert werden, beispielsweise über GitHub Pages; lokal per `file://` steht Web Serial nicht zuverlässig zur Verfügung.
 
 ## Koppeln und bedienen
 
