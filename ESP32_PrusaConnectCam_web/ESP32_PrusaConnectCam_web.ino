@@ -5,6 +5,7 @@
 #include <Ticker.h>
 #include <time.h>
 #include "Arduino.h"
+#include "esp_arduino_version.h"
 #include "server.h"
 #include "cfg.h"
 #include "var.h"
@@ -144,6 +145,9 @@ void scanQr() {
 void setup() {
   Serial.begin(SERIAL_PORT_SPEED);
   Serial.println("\nM5PoECAM Prusa Connect " SW_VERSION);
+  Serial.printf("Board: %s | Arduino core: %s | ESP-IDF: %s | PSRAM: %u bytes\n",
+                ARDUINO_BOARD, ESP_ARDUINO_VERSION_STR, ESP.getSdkVersion(),
+                static_cast<unsigned>(ESP.getPsramSize()));
   GPIO_Init();
   Cfg_Init();
   Camera_InitCamera();

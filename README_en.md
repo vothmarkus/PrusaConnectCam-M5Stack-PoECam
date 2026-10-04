@@ -1,10 +1,18 @@
 # PrusaConnectCam – M5Stack PoE-CAM
 
-[Deutsch](README.md) · Firmware **1.3.0**
+[Deutsch](README.md) · Firmware **1.3.1**
 
 The M5Stack **Unit PoE CAM (U121, ESP32 + W5500 + OV2640)** sends JPEG snapshots directly to Prusa Connect. It connects over Ethernet and can be powered by a PoE switch or injector. Defaults: one image every 10 seconds, 1600 × 1200 pixels, JPEG quality setting 20.
 
-## Fix for cameras that stopped uploading
+## Camera startup failure after updating to 1.3.0
+
+**1.3.1 restores the board package used by the previously working firmware.** The original ELF committed in `1afe580` records **M5Stack 3.2.2**, ESP-IDF `v5.4.2-25-g858a988d6e` and the board options documented below. Version 1.3.0 was accidentally built with **Espressif 3.2.0** and a different SDK. This unnecessary change is the suspected cause of the reported camera startup failure; sensor pins were unchanged. Confirmation on a physical device is still pending.
+
+**8 flashes**, `i2c.master: probe device timeout` and `Camera probe failed ... 0x105 (ESP_ERR_NOT_FOUND)` indicate that sensor detection failed before any HTTPS upload. This particular failure is not caused by an SSL certificate.
+
+Update paired cameras using the **1.3.1 application BIN**, or choose **“Kamera auf 1.3.1 aktualisieren”** in the [web flasher](https://vothmarkus.github.io/PrusaConnectCam-M5Stack-PoECam/). A full erase or re-pairing is not required. Power-cycle after flashing. The log should show `M5PoECAM Prusa Connect 1.3.1`, the SDK above, then `Camera ready`. Check for a fresh Prusa Connect snapshot before updating the remaining cameras.
+
+## Fix for Prusa uploads
 
 During investigation on **3 October 2026**, the previous endpoint `webcam.connect.prusa3d.com/c/snapshot` returned HTTP 301. Its redirect points to the webcam application; the current upload API is **`https://camera-service.prusa3d.com/c/snapshot`**. The old firmware ignored HTTP status codes and could report a failed upload as successful.
 
@@ -85,17 +93,19 @@ For 401/403, check that the camera still exists in Prusa Connect and belongs to 
 
 ## Build and test
 
-Reference build: **Arduino CLI 1.3.1**, **Espressif Arduino-ESP32 3.2.0**, board `M5PoECAM` (`esp32:esp32:m5stack_poe_cam`). Arduino libraries are included in the core; `quirc` is bundled. `ArduinoUniqueID` is no longer required. No PlatformIO configuration is provided.
+Reference build: **Arduino CLI 1.3.1**, **M5Stack 3.2.2** (Arduino core 3.2.1, ESP-IDF `v5.4.2-25-g858a988d6e`), board `M5PoECAM` (`m5stack:esp32:m5stack_poe_cam`). Arduino libraries are included in the core; `quirc` is bundled. `ArduinoUniqueID` is no longer required. No PlatformIO configuration is provided.
 
 ```bash
 git clone https://github.com/vothmarkus/PrusaConnectCam-M5Stack-PoECam.git
 cd PrusaConnectCam-M5Stack-PoECam
-arduino-cli core update-index --additional-urls https://espressif.github.io/arduino-esp32/package_esp32_index.json
-arduino-cli core install esp32:esp32@3.2.0 --additional-urls https://espressif.github.io/arduino-esp32/package_esp32_index.json
+arduino-cli core update-index --additional-urls https://static-cdn.m5stack.com/resource/arduino/package_m5stack_index.json
+arduino-cli core install m5stack:esp32@3.2.2 --additional-urls https://static-cdn.m5stack.com/resource/arduino/package_m5stack_index.json
 ./tools/build.sh
 ```
 
-The script requires Bash/Python 3 and selects PSRAM **enabled**, **default** partitions, flash **4 MB / DIO / 80 MHz**, CPU **240 MHz**, loop/event core **1**, debug **none**, and full-flash erase **disabled**. In Arduino IDE, select the same options and open `ESP32_PrusaConnectCam_web/ESP32_PrusaConnectCam_web.ino`. The script exports binaries, `manifest.json` and `SHA256SUMS` to the existing build directory; intermediate ELF/MAP files stay under `.build/`.
+The script requires Bash/Python 3 and selects PSRAM **enabled**, **default** partitions, flash **4 MB / QIO / 80 MHz**, CPU **240 MHz**, loop/event core **1**, debug **none**, and full-flash erase **disabled**. In Arduino IDE, select the same options and open `ESP32_PrusaConnectCam_web/ESP32_PrusaConnectCam_web.ino`. The script exports binaries, `manifest.json` and `SHA256SUMS` to the existing build directory; intermediate ELF/MAP files stay under `.build/`. Export also updates the web flasher version, image sizes and checksums.
+
+M5Stack package 3.2.2 internally reports Arduino core 3.2.1; this is expected. Its unmodified headers produce pin macro redefinition warnings. Do not switch board packages just to remove these vendor warnings.
 
 Host tests require Linux, GCC/G++ and Bash:
 

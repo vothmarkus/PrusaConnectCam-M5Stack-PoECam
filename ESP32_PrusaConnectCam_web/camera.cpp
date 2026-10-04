@@ -76,7 +76,8 @@ bool Camera_InitCamera(uint8_t FrameSize, bool GREYSCALE)
   /* Camera init */
   esp_err_t err = esp_camera_init(&config);
   if (err != ESP_OK) {
-    Serial.printf("Camera init failed. Error 0x%x", err);
+    Serial.printf("Camera init failed: 0x%x (%s). Sensor initialization failed before HTTPS.\n",
+                  err, esp_err_to_name(err));
     cameraInitialized = false;
     return false;
   }
@@ -84,7 +85,7 @@ bool Camera_InitCamera(uint8_t FrameSize, bool GREYSCALE)
   cameraInitialized = true;
   //Write to Sensor
   Camera_SetCameraCfg();
-
+  Serial.println("Camera ready");
   return true;
 }
 
