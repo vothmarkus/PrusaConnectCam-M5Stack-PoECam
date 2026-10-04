@@ -29,6 +29,8 @@
     code { background:#0b1020; padding:.15em .35em; border-radius:5px; }
     a { color:#93c5fd; }
     .warning { color:#fecaca; }
+    .ok { color:#86efac; }
+    .info { color:#bfdbfe; }
   </style>
 </head>
 <body>
@@ -39,8 +41,8 @@
   <div class="card">
     <h2>Vorbereitung</h2>
     <ol>
-      <li>PoE-CAM über einen geeigneten ESP32-Downloader/PoE-CAM-Adapter mit dem Computer verbinden.</li>
-      <li>Chrome oder Edge verwenden. Web Serial benötigt HTTPS.</li>
+      <li>PoE-CAM über einen geeigneten ESP32-Downloader/PoE-CAM-Adapter mit dem Computer oder Android-Gerät verbinden.</li>
+      <li>Desktop: Chrome oder Edge verwenden. Android: aktuelles Chrome (Web Serial ab Chrome 148) und USB-Host/OTG verwenden. Web Serial benötigt HTTPS.</li>
       <li>Für bereits gekoppelte Kameras ausschließlich <strong>Update</strong> verwenden.</li>
     </ol>
     <div class="row">
@@ -51,6 +53,7 @@
         </select>
       </label>
     </div>
+    <p id="platformInfo" class="muted">Browser-Unterstützung wird geprüft …</p>
   </div>
 
   <div class="card safe">
@@ -106,6 +109,23 @@
   let transport = null;
   let loader = null;
   let busy = false;
+
+  function showPlatformSupport() {
+    const info = $("platformInfo");
+    const ua = navigator.userAgent || "";
+    const isAndroid = /Android/i.test(ua);
+    if ("serial" in navigator) {
+      info.className = "ok";
+      info.textContent = isAndroid
+        ? "Android erkannt · native Web-Serial-Unterstützung verfügbar. Es wird derselbe Flashpfad wie am Desktop verwendet."
+        : "Native Web-Serial-Unterstützung verfügbar. Der bewährte Desktop-Flashpfad ist aktiv.";
+    } else {
+      info.className = "warning";
+      info.textContent = isAndroid
+        ? "Android erkannt, aber dieser Browser stellt Web Serial nicht bereit. Chrome aktualisieren (mindestens Version 148) oder den Desktop-Flasher verwenden."
+        : "Dieser Browser stellt Web Serial nicht bereit. Bitte aktuelles Chrome oder Edge verwenden.";
+    }
+  }
 
   function log(message) {
     status.textContent += "\n" + message;
@@ -199,6 +219,8 @@
       setBusy(false);
     }
   }
+
+  showPlatformSupport();
 
   $("confirmErase").addEventListener("change", () => {
     $("install").disabled = busy || !$("confirmErase").checked;
