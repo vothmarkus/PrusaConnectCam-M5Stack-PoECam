@@ -14,10 +14,11 @@
 #include "mcu_cfg.h"
 #include "var.h"
 
-void Camera_InitCamera(uint8_t FrameSize = CameraCfg.FrameSize, bool GREYSCALE = false);
+bool Camera_InitCamera(uint8_t FrameSize = CameraCfg.FrameSize, bool GREYSCALE = false);
 void Camera_SetCameraCfg();
-void Camera_CapturePhoto();
-void Camera_Reinit(uint8_t FrameSize = CameraCfg.FrameSize, bool GREYSCALE = false);
+bool Camera_CapturePhoto();
+void Camera_ReleasePhoto();
+bool Camera_Reinit(uint8_t FrameSize = CameraCfg.FrameSize, bool GREYSCALE = false);
 #endif
 
 /* EOF */

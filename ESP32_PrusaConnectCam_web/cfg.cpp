@@ -5,12 +5,16 @@ void Cfg_Init() {
   Serial.print("Init cfg module [");
   Serial.print(EEPROM_SIZE);
   Serial.println("]");
-  EEPROM.begin(EEPROM_SIZE);
+  if (!EEPROM.begin(EEPROM_SIZE)) {
+    Serial.println("EEPROM initialization failed");
+    delay(2000);
+    ESP.restart();
+  }
 
   /* check, when it is first MCU start. If yes, then set default CFG */
   if (Cfg_CheckFirstMcuStart() == true) {
-    Cfg_SaveFirstMcuStartFlag(CFG_FIRST_MCU_START_NAK);
     Cfg_DefaultCfg();
+    Cfg_SaveFirstMcuStartFlag(CFG_FIRST_MCU_START_NAK);
   }
 
   /* read cfg from eeprom */
@@ -33,6 +37,14 @@ void Cfg_ReadCfg() {
   Cfg_LoadExposureCtrl();
   Cfg_LoadCameraFlash();
   Cfg_LoadCameraFlashDuration();
+  // Preserve EEPROM layout/pairing; reject unsafe settings in RAM.
+  if (RefreshInterval < 10) RefreshInterval = 10;
+  if (CameraCfg.FrameSize > 6) CameraCfg.FrameSize = 6;
+  if (CameraCfg.PhotoQuality < 10 || CameraCfg.PhotoQuality > 63) CameraCfg.PhotoQuality = 20;
+  if (CameraCfg.brightness < -2 || CameraCfg.brightness > 2) CameraCfg.brightness = 0;
+  if (CameraCfg.contrast < -2 || CameraCfg.contrast > 2) CameraCfg.contrast = 0;
+  if (CameraCfg.saturation < -2 || CameraCfg.saturation > 2) CameraCfg.saturation = 0;
+  if (CameraCfg.CameraFlashDuration > 2000) CameraCfg.CameraFlashDuration = 200;
 }
 
 /* set default cfg */
@@ -56,22 +68,10 @@ void Cfg_DefaultCfg() {
 }
 
 void Cfg_GetFingerprint() {
-  String Id = "";
-  for (size_t i = 0; i < UniqueIDsize; i++) {
-    Id += String(UniqueID[i]);
-  }
-  String encoded = base64::encode(Id + " " + EthernetMacAddr);
-
-  Cfg_SaveFingerprint(encoded);
-
-  Serial.print("UniqueID: ");
-  Serial.println(Id);
-
-  Serial.print("Ethernet MAC: ");
-  Serial.println(EthernetMacAddr);
-
-  Serial.print("Encoded: ");
-  Serial.println(encoded);
+  // Only for a fresh configuration. Never replace a paired fingerprint.
+  char id[32];
+  snprintf(id, sizeof(id), "M5PoECAM-%012llX", ESP.getEfuseMac());
+  Cfg_SaveFingerprint(base64::encode(String(id)));
 }
 
 /* Function for check if it's first MCU start */
@@ -93,7 +93,7 @@ bool Cfg_CheckFirstMcuStart() {
 
 /* transform uint8_t from web interface to framesize_t */
 framesize_t Cfg_TransformFrameSizeDataType(uint8_t i_data) {
-  if ((i_data >= 0) && (i_data <= 6)) {
+  if (i_data <= 6) {
     switch (i_data) {
       case 0:
         return FRAMESIZE_QVGA;
@@ -119,7 +119,7 @@ framesize_t Cfg_TransformFrameSizeDataType(uint8_t i_data) {
 
 /* transform uint8_t from web interface to string */
 String Cfg_TransformFrameSizeToString(uint8_t i_data) {
-  if ((i_data >= 0) && (i_data <= 6)) {
+  if (i_data <= 6) {
     switch (i_data) {
       case 0:
         return "QVGA (320 x 240)";
@@ -153,45 +153,24 @@ void Cfg_SaveRefreshInterval(uint8_t i_interval) {
 }
 
 /* save token to EEPROM */
-void Cfg_SaveToken(String i_token) {
-  uint8_t len = i_token.length();
-  Serial.print("Save Token[");
-  Serial.print(len);
-  Serial.print("]: ");
-  Serial.println(i_token);
-
-  if (len < EEPROM_ADDR_TOKEN_LENGTH) {
-    EEPROM.write(EEPROM_ADDR_TOKEN_START, len);
-
-    for (uint8_t i = EEPROM_ADDR_TOKEN_START + 1, j = 0; j < len; i++, j++) {
-      EEPROM.write(i, i_token.charAt(j));
-    }
-    EEPROM.commit();
-    Serial.println("Write done");
-  } else {
-    Serial.println("Skip write");
-  }
+bool Cfg_SaveToken(String token) {
+  const size_t length = token.length();
+  if (length && !prusa::validToken(token.c_str(), length)) return false;
+  EEPROM.write(EEPROM_ADDR_TOKEN_START, length);
+  for (size_t i = 0; i < length; ++i) EEPROM.write(EEPROM_ADDR_TOKEN_START + 1 + i, token[i]);
+  const bool saved = EEPROM.commit();
+  Serial.println(saved ? "Token saved (redacted)" : "Token save failed");
+  return saved;
 }
-
-/* save fingerprint to EEPROM */
-void Cfg_SaveFingerprint(String i_fingerprint) {
-  uint8_t len = i_fingerprint.length();
-  Serial.print("Save Fingerprint[");
-  Serial.print(len);
-  Serial.print("]: ");
-  Serial.println(i_fingerprint);
-
-  if (len < EEPROM_ADDR_FINGERPRINT_LENGTH) {
-    EEPROM.write(EEPROM_ADDR_FINGERPRINT_START, len);
-
-    for (uint8_t i = EEPROM_ADDR_FINGERPRINT_START + 1, j = 0; j < len; i++, j++) {
-      EEPROM.write(i, i_fingerprint.charAt(j));
-    }
-    EEPROM.commit();
-    Serial.println("Write done");
-  } else {
-    Serial.println("Skip write");
+void Cfg_SaveFingerprint(String fingerprint) {
+  const size_t length = fingerprint.length();
+  if (!prusa::validHeaderValue(fingerprint.c_str(), length, EEPROM_ADDR_FINGERPRINT_LENGTH)) {
+    Serial.println("Invalid fingerprint; not saved");
+    return;
   }
+  EEPROM.write(EEPROM_ADDR_FINGERPRINT_START, length);
+  for (size_t i = 0; i < length; ++i) EEPROM.write(EEPROM_ADDR_FINGERPRINT_START + 1 + i, fingerprint[i]);
+  if (!EEPROM.commit()) Serial.println("Fingerprint save failed");
 }
 
 void Cfg_SavePhotoQuality(uint8_t i_data) {
@@ -303,43 +282,25 @@ void Cfg_LoadRefreshInterval() {
 
 /* load token from eeprom */
 void Cfg_LoadToken() {
-  Serial.println(EEPROM_SIZE);
-  String tmp = "";
-  uint8_t len = EEPROM.read(EEPROM_ADDR_TOKEN_START);
-  Serial.print("Read token [");
-  Serial.print(len);
-  Serial.print("]: ");
-
-  if ((len <= EEPROM_ADDR_TOKEN_LENGTH) && (len > 0)) {
-    for (uint8_t i = EEPROM_ADDR_TOKEN_START + 1, j = 0; j < len; i++, j++) {
-      tmp += (char) EEPROM.read(i);
-    }
-    sToken = tmp;
+  sToken = "";
+  const size_t length = EEPROM.read(EEPROM_ADDR_TOKEN_START);
+  if (prusa::validStoredLength(length, EEPROM_ADDR_TOKEN_LENGTH)) {
+    String token;
+    for (size_t i = 0; i < length; ++i) token += static_cast<char>(EEPROM.read(EEPROM_ADDR_TOKEN_START + 1 + i));
+    if (prusa::validToken(token.c_str(), token.length())) sToken = token;
   }
-
-  Serial.print(tmp);
-  Serial.print(" -> ");
-  Serial.println(sToken);
+  Serial.println(sToken.isEmpty() ? "No valid pairing token stored" : "Pairing token loaded (redacted)");
 }
-
-/* load fingerprint from eeprom */
 void Cfg_LoadFingerprint() {
-  String tmp = "";
-  uint8_t len = EEPROM.read(EEPROM_ADDR_FINGERPRINT_START);
-  Serial.print("Read fingerprint [");
-  Serial.print(len);
-  Serial.print("]: ");
-
-  if ((len <= EEPROM_ADDR_FINGERPRINT_LENGTH) && (len > 0)) {
-    for (uint8_t i = EEPROM_ADDR_FINGERPRINT_START + 1, j = 0; j < len; i++, j++) {
-      tmp += (char) EEPROM.read(i);
-    }
-    sFingerprint = tmp;
+  sFingerprint = "";
+  const size_t length = EEPROM.read(EEPROM_ADDR_FINGERPRINT_START);
+  if (prusa::validStoredLength(length, EEPROM_ADDR_FINGERPRINT_LENGTH)) {
+    String fingerprint;
+    for (size_t i = 0; i < length; ++i) fingerprint += static_cast<char>(EEPROM.read(EEPROM_ADDR_FINGERPRINT_START + 1 + i));
+    if (prusa::validHeaderValue(fingerprint.c_str(), fingerprint.length(), EEPROM_ADDR_FINGERPRINT_LENGTH))
+      sFingerprint = fingerprint;
   }
-
-  Serial.print(tmp);
-  Serial.print(" -> ");
-  Serial.println(sFingerprint);
+  Serial.println(sFingerprint.isEmpty() ? "No valid fingerprint stored" : "Stored fingerprint retained");
 }
 
 void Cfg_LoadPhotoQuality() {
@@ -411,7 +372,7 @@ void Cfg_LoadCameraFlashDuration() {
 /* toggle horizontal flip (hmirror) and save to EEPROM */
 void Cfg_ToggleHmirror() {
   bool newState = !CameraCfg.hmirror;  // toggle
-  
+
   Serial.print("Toggle Hmirror from ");
   Serial.print(CameraCfg.hmirror);
   Serial.print(" to ");

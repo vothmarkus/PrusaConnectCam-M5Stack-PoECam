@@ -1,31 +1,33 @@
 #ifndef _MCU_CFG_H_
 #define _MCU_CFG_H_
 
-#define SW_VERSION         "1.0.0"
+#define SW_VERSION         "1.3.0"
 
-#define WDT_TIMEOUT         50              /* wdg timeout second */
 #define QR_TIMEOUT          30              /* QR reading timeout second */
 
 /* ---------------- WEB CFG  ----------------*/
-#define HOST_URL           "https://webcam.connect.prusa3d.com/c/snapshot" /* Prusa Connect server URL for photo */
-#define DOMAIN             "webcam.connect.prusa3d.com"                    /* prusa connect server */
-#define PHOTO_FRAGMENT_SIZE 9000            /* photo fragmentation size */
+#define HOST_URL           "https://camera-service.prusa3d.com/c/snapshot" /* Prusa Connect server URL for photo */
+#define DOMAIN             "camera-service.prusa3d.com"                    /* prusa connect server */
+#define HTTP_CONNECT_TIMEOUT_MS 12000
+#define HTTP_READ_TIMEOUT_MS    15000
+#define TLS_HANDSHAKE_TIMEOUT_S 15
+#define MIN_VALID_UNIX_TIME     1735689600LL // 2025-01-01; wait for NTP before TLS
 
 /* ---------------- GPIO CFG  ----------------*/
 #define LED_PIN 0
 #define FLASH_PIN 25
 #define BUTTON_PIN 37
-#define SERIAL_PORT_SPEER   115200          /* baud rate */
+#define SERIAL_PORT_SPEED   115200          /* baud rate */
 
 /* ---------------- ETH CFG  ------------------*/
 #define USE_TWO_ETH_PORTS 0
- 
+
 #define ETH_PHY_TYPE        ETH_PHY_W5500
 #define ETH_PHY_ADDR        1
 #define ETH_PHY_CS          4
 #define ETH_PHY_IRQ         -1
 #define ETH_PHY_RST         -1
- 
+
 // SPI pins
 #define ETH_SPI_SCK         23
 #define ETH_SPI_MISO        38
@@ -73,8 +75,8 @@
 #define EEPROM_ADDR_PHOTO_QUALITY_START       (EEPROM_ADDR_EXPOSURE_CTRL_START + EEPROM_ADDR_EXPOSURE_CTRL_LENGTH)
 #define EEPROM_ADDR_PHOTO_QUALITY_LENGTH      1
 
-#define EEPROM_ADDR_FIRST_MCU_START_FLAG_START    (EEPROM_ADDR_PHOTO_QUALITY_START + EEPROM_ADDR_PHOTO_QUALITY_LENGTH)  
-#define EEPROM_ADDR_FIRST_MCU_START_FLAG_LENGTH   1                                                                                       
+#define EEPROM_ADDR_FIRST_MCU_START_FLAG_START    (EEPROM_ADDR_PHOTO_QUALITY_START + EEPROM_ADDR_PHOTO_QUALITY_LENGTH)
+#define EEPROM_ADDR_FIRST_MCU_START_FLAG_LENGTH   1
 
 #define EEPROM_ADDR_CAMERA_FLASH_FUNCTION         (EEPROM_ADDR_FIRST_MCU_START_FLAG_START + EEPROM_ADDR_FIRST_MCU_START_FLAG_LENGTH)
 #define EEPROM_ADDR_CAMERA_FLASH_FUNCTION_LENGTH  1

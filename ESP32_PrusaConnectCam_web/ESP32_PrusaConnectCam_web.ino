@@ -1,28 +1,10 @@
 /*
-   This code is adapted for the M5Stack POEcam Module
-
-   Project: ESP32 PrusaConnect Camera
-   Author: Markus Voth
-   e-mail: vothmarkus@gmail.com
-   Version 1.2 (NTP sync)
-
-   Press and hold the button briefly until the LED flashes slowly to activate QR detection mode.
-   Press and hold the button for 5 seconds while it flashes quickly to restart the MCU.
-   If set correctly, a photo will be taken every 10s (synchronized to NTP) while the LED flashes for 1s to confirm.
-
-   ERROR flash codes:
-   - 2: CONNECTION FAILED
-   - 3: NOT AUTHORIZED
-   - 4: FORBIDDEN FINGERPRINT
-   - 5: INVALID TOKEN DATA
-   - 6: INVALID FINGERPRINT DATA
-*/
-
-/* includes */
+ * Prusa Connect camera for M5Stack Unit PoE CAM (ESP32 + W5500).
+ * Adapted by Markus Voth. See README.md for wiring, flashing and LED codes.
+ */
 #include <Ticker.h>
+#include <time.h>
 #include "Arduino.h"
-#include <time.h>              // ⬅️ für NTP sync
-
 #include "server.h"
 #include "cfg.h"
 #include "var.h"
@@ -30,242 +12,187 @@
 #include "qr.h"
 
 Ticker blinker;
-volatile uint8_t blinkCounter = 0;
-void blinking()
-{
-    digitalWrite(LED_PIN, !digitalRead(LED_PIN));
-}
-void blinkTimes()
-{
-    digitalWrite(LED_PIN, bool((blinkCounter+1)%2));
-    if(blinkCounter > 0)
-      --blinkCounter;
-    else
-    {
-        blinker.detach();
-        digitalWrite(LED_PIN, 1-LOW);
-    }
-    return;
-}
+static volatile bool ethConnected = false;
+static volatile uint8_t blinkEdges = 0;
+static uint8_t ledMode = 255;
+static bool ntpStarted = false;
 
-void GPIO_Init()
-{
-    pinMode(LED_PIN, OUTPUT);
-    digitalWrite(LED_PIN, 1-LOW);
-    
-    pinMode(FLASH_PIN, OUTPUT);
-    digitalWrite(FLASH_PIN, LOW);
-
-    pinMode(BUTTON_PIN, INPUT);
-
-    return;
-}
-
-void getGPIOreset() //Flip image horrizontally and reboot
-{
-    /* remember call time */
-    uint32_t resetStart = millis();
-        
-    /* blink quickly */
-    blinker.attach(0.1, blinking);
-
-    /* reboot ESP when holding button for 5s */
-    while(!digitalRead(BUTTON_PIN))
-    {
-        if(millis() > resetStart + 5*1000)
-        {
-            Cfg_ToggleHmirror();
-            ESP.restart();
-        }
-        delay(0);
-    }
-
-    blinker.attach(0.25, blinking);
-}
- 
-// Ethernet event handler
-static bool eth_connected = false;
-
-void onEvent(arduino_event_id_t event, arduino_event_info_t info)
-{
-  switch (event) {
-    case ARDUINO_EVENT_ETH_START:
-      Serial.println("ETH Started");
-      
-      /* Get MAC Address */
-      ETH.macAddress(macAddr);
-      char buf[18];
-      snprintf(buf, sizeof(buf), "%02X:%02X:%02X:%02X:%02X:%02X",
-           macAddr[0], macAddr[1], macAddr[2],
-           macAddr[3], macAddr[4], macAddr[5]);
-      EthernetMacAddr = buf;
-      
-      /* Get Ethernet Device Name */
-      char suffix[7];
-      snprintf(suffix, sizeof(suffix), "%02X%02X%02X", macAddr[3], macAddr[4], macAddr[5]);
-      EthernetDeciveName = String("prusaCAM-") + suffix;
-      
-      // Set Ethernet hostname here
-      ETH.setHostname(EthernetDeciveName.c_str());
-      Serial.println("ETH MAC: " + EthernetMacAddr);
-      Serial.println("ETH Name: " + EthernetDeciveName);
-      break;
-    case ARDUINO_EVENT_ETH_CONNECTED:
-      Serial.println("ETH Connected");
-      break;
-    case ARDUINO_EVENT_ETH_GOT_IP:
-      Serial.println("ETH Got IP: " + String(esp_netif_get_desc(info.got_ip.esp_netif)));
-      Serial.println(ETH);
-      eth_connected = true;
-      NTP_Init();
-      break;
-    case ARDUINO_EVENT_ETH_LOST_IP:
-      Serial.println("ETH Lost IP");
-      eth_connected = false;
-      break;
-    case ARDUINO_EVENT_ETH_DISCONNECTED:
-      Serial.println("ETH Disconnected");
-      eth_connected = false;
-      break;
-    case ARDUINO_EVENT_ETH_STOP:
-      Serial.println("ETH Stopped");
-      eth_connected = false;
-      break;
-    default:
-      break;
+// Active-low LED. Only mode changes replace the timer, preserving error pulses.
+void blinking() { digitalWrite(LED_PIN, !digitalRead(LED_PIN)); }
+void blinkTimes() {
+  if (blinkEdges) {
+    blinking();
+    blinkEdges = blinkEdges - 1;
+  }
+  if (!blinkEdges) {
+    blinker.detach();
+    digitalWrite(LED_PIN, HIGH);
   }
 }
-
-void ETH_Init()
-{
-    Network.onEvent(onEvent);
-    SPI.begin(ETH_SPI_SCK, ETH_SPI_MISO, ETH_SPI_MOSI, ETH_PHY_CS);
-    ETH.begin(ETH_PHY_TYPE, ETH_PHY_ADDR, ETH_PHY_CS, ETH_PHY_IRQ, ETH_PHY_RST, SPI);
+void setLedMode(uint8_t mode) {
+  if (mode == ledMode) return;
+  ledMode = mode;
+  blinker.detach();
+  blinkEdges = 0;
+  digitalWrite(LED_PIN, HIGH);
+  switch (mode) {
+    case 1: blinker.attach(1.0, blinking); break; // no Ethernet IP
+    case 2: blinker.attach(0.25, blinking); break; // waiting for time
+    case 3: blinker.attach(2.0, blinking); break; // not paired
+    case 4: blinker.attach(0.15, blinking); break; // QR scanning
+    case 5: blinker.attach(0.1, blinking); break; // button held
+    default: break;
+  }
 }
-
-// --- QR-Code Handling ---
-void getQR()
-{
-    Camera_Reinit(0, true);
-    String token = "";
-    while(token.isEmpty())
-    {
-        Camera_CapturePhoto();
-        token = qrCodeDetect();
-        delay(100);
-
-        getGPIOreset();
+void signalResult(uint8_t result) {
+  setLedMode(0);
+  blinker.detach();
+  blinkEdges = 2 * (result + 1) - 1;
+  digitalWrite(LED_PIN, LOW);
+  blinker.attach(result ? 0.25 : 0.5, blinkTimes);
+}
+void GPIO_Init() {
+  pinMode(LED_PIN, OUTPUT);
+  digitalWrite(LED_PIN, HIGH);
+  pinMode(FLASH_PIN, OUTPUT);
+  digitalWrite(FLASH_PIN, LOW);
+  pinMode(BUTTON_PIN, INPUT);
+}
+// Short release starts/cancels scanning. Holding 5 s keeps the original
+// horizontal-mirror + reboot function; pairing is not erased.
+bool shortButtonPress() {
+  if (digitalRead(BUTTON_PIN)) return false;
+  delay(40);
+  if (digitalRead(BUTTON_PIN)) return false;
+  const uint32_t pressedAt = millis();
+  setLedMode(5);
+  while (!digitalRead(BUTTON_PIN)) {
+    if (static_cast<uint32_t>(millis() - pressedAt) >= 5000) {
+      Cfg_ToggleHmirror();
+      ESP.restart();
     }
-    if(!token.isEmpty())
-    {
-        Cfg_SaveToken(token);
-        sToken = token;
-    }
-    else
-    {
-        Serial.println("QR timeout: No QR-Code was detected within " + String(QR_TIMEOUT) + "s");
-    }
+    delay(5);
+  }
+  delay(40);
+  return true;
+}
+void onEvent(arduino_event_id_t event, arduino_event_info_t info) {
+  (void)info;
+  switch (event) {
+    case ARDUINO_EVENT_ETH_START:
+      ETH.setHostname(EthernetDeciveName.c_str());
+      Serial.println("Ethernet started");
+      break;
+    case ARDUINO_EVENT_ETH_GOT_IP:
+      ethConnected = true;
+      Serial.print("Ethernet IP: ");
+      Serial.println(ETH.localIP());
+      break;
+    case ARDUINO_EVENT_ETH_LOST_IP:
+    case ARDUINO_EVENT_ETH_DISCONNECTED:
+    case ARDUINO_EVENT_ETH_STOP:
+      ethConnected = false;
+      Serial.println("Ethernet disconnected / no IP");
+      break;
+    default: break;
+  }
+}
+void ETH_Init() {
+  char hostname[24];
+  const uint64_t mac = ESP.getEfuseMac();
+  // getEfuseMac stores MAC bytes little-endian; use the device suffix.
+  snprintf(hostname, sizeof(hostname), "prusaCAM-%02X%02X%02X",
+           static_cast<unsigned>((mac >> 24) & 255),
+           static_cast<unsigned>((mac >> 32) & 255),
+           static_cast<unsigned>((mac >> 40) & 255));
+  EthernetDeciveName = hostname;
+  Network.onEvent(onEvent);
+  SPI.begin(ETH_SPI_SCK, ETH_SPI_MISO, ETH_SPI_MOSI, ETH_PHY_CS);
+  if (!ETH.begin(ETH_PHY_TYPE, ETH_PHY_ADDR, ETH_PHY_CS, ETH_PHY_IRQ, ETH_PHY_RST, SPI))
+    Serial.println("Ethernet initialization failed");
+}
+void scanQr() {
+  Serial.println("QR scan started (30 s); short button press cancels");
+  setLedMode(4);
+  if (!Camera_Reinit(0, true)) {
     Camera_Reinit();
-
+    signalResult(static_cast<uint8_t>(prusa::UploadResult::Camera));
     return;
-}
-
-// --- NTP Setup ---
-#define MY_TZ  "CET-1CEST,M3.5.0,M10.5.0/3"
-int lastPhotoSecond = -1;
-
-void NTP_Init()
-{
-    configTzTime(MY_TZ, "pool.ntp.org", "time.nist.gov");
-    struct tm timeinfo;
-    while (!getLocalTime(&timeinfo)) {
-        Serial.println("Waiting for NTP time...");
-        delay(500);
+  }
+  const uint32_t startedAt = millis();
+  bool paired = false;
+  while (static_cast<uint32_t>(millis() - startedAt) < QR_TIMEOUT * 1000UL) {
+    if (shortButtonPress()) break;
+    if (Camera_CapturePhoto()) {
+      const String token = qrCodeDetect();
+      Camera_ReleasePhoto();
+      if (!token.isEmpty() && Cfg_SaveToken(token)) {
+        sToken = token;
+        paired = true;
+        break;
+      }
     }
-    Serial.println("Time synchronized!");
+    delay(50);
+  }
+  Camera_ReleasePhoto();
+  const bool restored = Camera_Reinit();
+  Serial.println(paired ? "Pairing token saved" : "QR scan ended; previous pairing retained");
+  if (!restored) signalResult(static_cast<uint8_t>(prusa::UploadResult::Camera));
+  else if (paired) signalResult(0);
+  else setLedMode(0);
 }
-
-// --- Main setup ---
 void setup() {
-  /* Serial port for debugging purposes */
-  Serial.begin(SERIAL_PORT_SPEER);
-  Serial.println("Start MCU!");
-  Serial.print("SW Version: ");
-  Serial.println(SW_VERSION);
-
-  /* read cfg from EEPROM */
-  Cfg_Init();
-
-  /* set GPIOs */
+  Serial.begin(SERIAL_PORT_SPEED);
+  Serial.println("\nM5PoECAM Prusa Connect " SW_VERSION);
   GPIO_Init();
-
-  /* init camera interface */
+  Cfg_Init();
   Camera_InitCamera();
-  
-  /* ethernet init */
   ETH_Init();
-
-  Serial.println("MCU configuration done!");
 }
-
-SET_LOOP_TASK_STACK_SIZE(40*1024); //40KB stack for QR-Code lib "quirc"
-
-// --- Main loop ---
-void loop()
-{
-    if(!eth_connected)
-    {
-        /* ethernet not connected: blink slowly*/
-        if(!blinkCounter)
-        {
-            blinkCounter = 1;
-            blinker.attach(1, blinking);
-        }
+SET_LOOP_TASK_STACK_SIZE(40 * 1024); // quirc structures use stack space
+void loop() {
+  static int64_t lastSlot = -1;
+  static uint32_t lastAttempt = 0;
+  static uint32_t lastNtpLog = 0;
+  if (shortButtonPress()) scanQr();
+  if (!ethConnected) {
+    setLedMode(1);
+    delay(5);
+    return;
+  }
+  if (!ntpStarted) {
+    // Start asynchronously in loop, never block the Ethernet event task.
+    configTzTime("CET-1CEST,M3.5.0,M10.5.0/3", "pool.ntp.org", "time.nist.gov");
+    ntpStarted = true;
+    Serial.println("NTP started; waiting for a valid clock before HTTPS");
+  }
+  const time_t now = time(nullptr);
+  if (now < MIN_VALID_UNIX_TIME) {
+    setLedMode(2);
+    if (static_cast<uint32_t>(millis() - lastNtpLog) >= 30000) {
+      lastNtpLog = millis();
+      Serial.println("Still waiting for NTP; check DNS and UDP port 123");
     }
-    else
-    {
-        /* ...connected: stop blinking slowly*/ 
-        blinkCounter = 0;
-        blinker.detach();
-        digitalWrite(LED_PIN, 1-LOW);
-
-        /* time-synchronized photo every 10s */
-        struct tm timeinfo;
-        if (getLocalTime(&timeinfo)) {
-          int sec = timeinfo.tm_sec;
-          if (sec % 10 == 0 && sec != lastPhotoSecond) {
-            lastPhotoSecond = sec;
-
-            Camera_CapturePhoto();
-
-            /* send photo to backend & get error code*/
-            blinkCounter = Server_SendPhotoToPrusaBackend();
-            
-            /* signal taking photo or error */
-            if(blinkCounter)
-            {
-                blinkCounter = 2*(blinkCounter+1);
-                blinker.attach(0.25, blinkTimes);
-            }
-            else
-            {
-                blinkCounter = 2;
-                blinker.attach(0.5, blinkTimes);
-            }
-          }
-        }
-    }
-    
-    /* press button to enter QR-Mode */ 
-    if(!digitalRead(BUTTON_PIN))
-    {
-        /* blink & check for QR-Codes within 30s */
-        blinker.attach(0.25, blinking);
-        getQR();
-        
-        blinker.detach();
-        digitalWrite(LED_PIN, 1-LOW);
-    }
+    delay(5);
+    return;
+  }
+  if (sToken.isEmpty()) {
+    setLedMode(3);
+    delay(5);
+    return;
+  }
+  setLedMode(0);
+  const int64_t slot = static_cast<int64_t>(now) / RefreshInterval;
+  // Epoch slots preserve NTP alignment; monotonic time prevents bursts after
+  // clock adjustments. Unsigned millis subtraction handles the 49-day wrap.
+  if (slot != lastSlot && (lastSlot < 0 ||
+      static_cast<uint32_t>(millis() - lastAttempt) >= RefreshInterval * 1000UL)) {
+    lastSlot = slot;
+    lastAttempt = millis();
+    uint8_t result = static_cast<uint8_t>(prusa::UploadResult::Camera);
+    if (Camera_CapturePhoto()) result = Server_SendPhotoToPrusaBackend();
+    Camera_ReleasePhoto();
+    signalResult(result);
+  }
+  delay(5);
 }
-
-/* EOF */

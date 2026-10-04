@@ -1,12 +1,7 @@
 #include "var.h"
 
-unsigned long lastMillis = 0;
-
-String photo = "";
-size_t height = 0;
-size_t width = 0;
+camera_fb_t *photoFrame = nullptr;
 uint8_t RefreshInterval = 0;
-String BackendReceivedData = "";
 
 String sToken = "";
 String sFingerprint = "";

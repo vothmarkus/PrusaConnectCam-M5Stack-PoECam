@@ -3,7 +3,7 @@
 
 #include "Arduino.h"
 #include <EEPROM.h>
-#include <ArduinoUniqueID.h>
+#include "protocol.h"
 #include <base64.h>
 #include "mcu_cfg.h"
 #include "var.h"
@@ -19,7 +19,7 @@ framesize_t Cfg_TransformFrameSizeDataType(uint8_t);
 String Cfg_TransformFrameSizeToString(uint8_t);
 
 void Cfg_SaveRefreshInterval(uint8_t);
-void Cfg_SaveToken(String);
+bool Cfg_SaveToken(String);
 void Cfg_SaveFingerprint(String);
 void Cfg_SavePhotoQuality(uint8_t);
 void Cfg_SaveFrameSize(uint8_t);

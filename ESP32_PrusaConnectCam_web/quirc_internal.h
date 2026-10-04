@@ -18,6 +18,9 @@
 #define QUIRC_INTERNAL_H_
 
 #include "quirc.h"
+#include <stddef.h>
+
+void *quirc_alloc(size_t size);
 
 #define QUIRC_PIXEL_WHITE 0
 #define QUIRC_PIXEL_BLACK 1

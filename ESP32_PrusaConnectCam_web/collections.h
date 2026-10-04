@@ -10,9 +10,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-#ifndef ps_malloc
-#define ps_malloc malloc
-#endif
 //////////
 // lifo //
 //////////

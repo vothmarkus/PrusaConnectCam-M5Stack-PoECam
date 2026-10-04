@@ -1,64 +1,39 @@
 #include "camera.h"
 
-/* Capture Photo and Save it to string array */
-void Camera_CapturePhoto() {
-  camera_fb_t * fb = NULL;
-
-  /* LED flash on and wait */
-  if (true == CameraCfg.CameraFlashStatus)
-  {
+static bool cameraInitialized = false;
+void Camera_ReleasePhoto() {
+  if (photoFrame) esp_camera_fb_return(photoFrame);
+  photoFrame = nullptr;
+}
+bool Camera_CapturePhoto() {
+  Camera_ReleasePhoto();
+  if (!cameraInitialized && !Camera_InitCamera()) return false;
+  if (CameraCfg.CameraFlashStatus) {
     digitalWrite(FLASH_PIN, HIGH);
     delay(CameraCfg.CameraFlashDuration);
   }
-  
-  /* get train photo */
-  fb = esp_camera_fb_get();
-  esp_camera_fb_return(fb);
-
-  do {
-    Serial.println("Taking a photo...");
-
-    /* get photo */
-    fb = esp_camera_fb_get();
-    if (!fb) {
-      Serial.println("Camera capture failed");
-      return;
-
-    } else {
-      /* copy photo from buffer to string array */
-      photo = "";
-      for (uint32_t i = 0; i < fb->len; i++) {
-        photo += (char) fb->buf[i];
-      }
-
-      height = fb->height;
-      width = fb->width;
-      
-      Serial.print("The picture has been saved. ");
-      Serial.print(" - Size: ");
-      Serial.print(photo.length());
-      Serial.println(" bytes");
-    }
-    esp_camera_fb_return(fb);
-
-    /* check if photo is correctly saved */
-  } while ( !( photo.length() > 100));
-
-  /* LED flash off */
-  if (true == CameraCfg.CameraFlashStatus)
-  {
-      digitalWrite(FLASH_PIN, LOW);
+  // Drop the queued frame so the next capture reflects the current scene.
+  camera_fb_t *stale = esp_camera_fb_get();
+  if (stale) esp_camera_fb_return(stale);
+  photoFrame = esp_camera_fb_get();
+  digitalWrite(FLASH_PIN, LOW);
+  if (!photoFrame || !photoFrame->buf || !photoFrame->len ||
+      !photoFrame->width || !photoFrame->height) {
+    Camera_ReleasePhoto();
+    Serial.println("Camera capture failed");
+    return false;
   }
+  return true;
 }
 
 /* Init camera module */
-void Camera_InitCamera(uint8_t FrameSize, bool GREYSCALE)
-{  
+bool Camera_InitCamera(uint8_t FrameSize, bool GREYSCALE)
+{
   Serial.println("Init camera CFG");
   /* Turn-off the 'brownout detector' */
   WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0);
 
-  camera_config_t config;
+  camera_config_t config = {};
   /* OV2640 camera module pinout and cfg*/
   config.ledc_channel = LEDC_CHANNEL_0;
   config.ledc_timer = LEDC_TIMER_0;
@@ -74,8 +49,8 @@ void Camera_InitCamera(uint8_t FrameSize, bool GREYSCALE)
   config.pin_pclk = PCLK_GPIO_NUM;
   config.pin_vsync = VSYNC_GPIO_NUM;
   config.pin_href = HREF_GPIO_NUM;
-  config.pin_sscb_sda = SIOD_GPIO_NUM;
-  config.pin_sscb_scl = SIOC_GPIO_NUM;
+  config.pin_sccb_sda = SIOD_GPIO_NUM;
+  config.pin_sccb_scl = SIOC_GPIO_NUM;
   config.pin_pwdn = PWDN_GPIO_NUM;
   config.pin_reset = RESET_GPIO_NUM;
   config.xclk_freq_hz = 20000000;
@@ -94,18 +69,23 @@ void Camera_InitCamera(uint8_t FrameSize, bool GREYSCALE)
   config.jpeg_quality = CameraCfg.PhotoQuality;                             /*10-63 lower number means higher quality */
   config.fb_count = 1;                                                      /* picture frame buffer alocation */
 
+  config.fb_location = psramFound() ? CAMERA_FB_IN_PSRAM : CAMERA_FB_IN_DRAM;
+  config.grab_mode = CAMERA_GRAB_WHEN_EMPTY;
+  if (!psramFound()) config.frame_size = FRAMESIZE_QVGA;
+
   /* Camera init */
   esp_err_t err = esp_camera_init(&config);
   if (err != ESP_OK) {
     Serial.printf("Camera init failed. Error 0x%x", err);
-    ESP.restart();
+    cameraInitialized = false;
+    return false;
   }
 
+  cameraInitialized = true;
   //Write to Sensor
   Camera_SetCameraCfg();
 
-  //Test Photo
-  Camera_CapturePhoto();
+  return true;
 }
 
 void Camera_SetCameraCfg() {
@@ -113,6 +93,7 @@ void Camera_SetCameraCfg() {
 
   /* sensor configuration */
   sensor_t * sensor = esp_camera_sensor_get();
+  if (!sensor) return;
   sensor->set_brightness(sensor, CameraCfg.brightness);       // -2 to 2
   sensor->set_contrast(sensor, CameraCfg.contrast);           // -2 to 2
   sensor->set_saturation(sensor, CameraCfg.saturation);       // -2 to 2
@@ -137,9 +118,11 @@ void Camera_SetCameraCfg() {
   sensor->set_colorbar(sensor, 0);                            // 0 = disable , 1 = enable
 }
 
-void Camera_Reinit(uint8_t FrameSize, bool GREYSCALE) {
-  esp_camera_deinit();
-  Camera_InitCamera(FrameSize, GREYSCALE);
+bool Camera_Reinit(uint8_t FrameSize, bool GREYSCALE) {
+  Camera_ReleasePhoto();
+  if (cameraInitialized) esp_camera_deinit();
+  cameraInitialized = false;
+  return Camera_InitCamera(FrameSize, GREYSCALE);
 }
 
 

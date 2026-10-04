@@ -1,12 +1,13 @@
 #ifndef _SERVER_H_
 #define _SERVER_H_
 
-#include <esp_task_wdt.h>
 #include <EEPROM.h>
 
 #include <ETH.h>
 #include <SPI.h>
 #include <NetworkClientSecure.h>
+#include <HTTPClient.h>
+#include "protocol.h"
 #include "Certificate.h"
 
 #include "mcu_cfg.h"

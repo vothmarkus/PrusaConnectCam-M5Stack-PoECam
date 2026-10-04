@@ -1,77 +1,44 @@
 #include "qr.h"
-
-String qrCodeDetect()
-{   
-    String token = "";
-        
-    struct quirc *qr = NULL;
-  
-    qr = quirc_new();
-    if (qr == NULL)
-    {
-        Serial.println("Error to alocate MEMORY");
-        return "";
-    }
-
-    if (quirc_resize(qr, width, height) < 0)
-    {
-        Serial.println("Error to alocate video MEMORY");
-        quirc_destroy(qr);
-        return "";
-    }
-
-    Serial.println("quirc_begin");
-    uint8_t *image = NULL;
-    image = quirc_begin(qr, NULL, NULL);
-    memcpy(image, photo.c_str(), photo.length());
-    quirc_end(qr);
-    
-    int count = quirc_count(qr);
-    Serial.println("Count: " + String(count));
-
-    for (int i = 0; i < count; i++)
-    {
-      struct quirc_code code;
-      struct quirc_data data;
-      quirc_decode_error_t err;
-      
-      quirc_extract(qr, i, &code);
-      err = quirc_decode(&code, &data);
-      if(err == QUIRC_ERROR_DATA_ECC)
-      {
-          quirc_flip(&code);
-          err = quirc_decode(&code, &data);
-      }
-      if(!err)
-      {
-          Serial.print("Payload: ");
-          Serial.println((const char *)data.payload);
-          token = extractToken(String((const char *)data.payload));
-          Serial.println("Token: " + token);
-      }
-      else
-      {
-          Serial.print("DECODE FAILED: ");
-          Serial.println(quirc_strerror(err));
-      }    
-    }
-
-    image = NULL;  
-    quirc_destroy(qr);
-    return token;
-}
-
-String extractToken(String url)
-{
-  int tokenIndex = url.indexOf("token=");
-  if (tokenIndex != -1)
-  {
-    tokenIndex += 6; // Bewegen zum Beginn des Tokens
-    String token = url.substring(tokenIndex);
-    return token;
+#include "protocol.h"
+String qrCodeDetect() {
+  if (!photoFrame || photoFrame->format != PIXFORMAT_GRAYSCALE ||
+      !photoFrame->buf || !photoFrame->width || !photoFrame->height ||
+      photoFrame->width > 1600 || photoFrame->height > 1200 ||
+      photoFrame->len != photoFrame->width * photoFrame->height) return "";
+  struct quirc *qr = quirc_new();
+  if (!qr) {
+    Serial.println("QR allocation failed");
+    return "";
   }
-  return String("");
+  if (quirc_resize(qr, photoFrame->width, photoFrame->height) < 0) {
+    Serial.println("QR image allocation failed");
+    quirc_destroy(qr);
+    return "";
+  }
+  uint8_t *image = quirc_begin(qr, nullptr, nullptr);
+  memcpy(image, photoFrame->buf, photoFrame->len);
+  quirc_end(qr);
+  String token;
+  for (int i = 0; i < quirc_count(qr); ++i) {
+    struct quirc_code code;
+    struct quirc_data data;
+    quirc_extract(qr, i, &code);
+    quirc_decode_error_t error = quirc_decode(&code, &data);
+    if (error == QUIRC_ERROR_DATA_ECC) {
+      quirc_flip(&code);
+      error = quirc_decode(&code, &data);
+    }
+    if (error) {
+      Serial.printf("QR decode failed: %s\n", quirc_strerror(error));
+      continue;
+    }
+    char parsed[21];
+    if (data.payload_len > 0 && static_cast<size_t>(data.payload_len) < sizeof(data.payload) &&
+        prusa::pairingToken(reinterpret_cast<const char *>(data.payload), data.payload_len, parsed)) {
+      token = parsed;
+      break;
+    }
+  }
+  quirc_destroy(qr);
+  return token;
 }
-
-/* EOF */
-

@@ -7,7 +7,7 @@
 #include "quirc.h"
 
 String qrCodeDetect();
-String extractToken(String);
+
 
 #endif
 

@@ -1,91 +1,119 @@
 # PrusaConnectCam – M5Stack PoE-CAM
 
-[English version](README_en.md)
+[English](README_en.md) · Firmware **1.3.0**
 
-Dieses Projekt verbindet eine **M5Stack PoE-CAM** direkt mit **Prusa Connect**.  
-Die Kamera wird über Ethernet (PoE-fähig) betrieben und meldet sich nach der Kopplung als **externe Kamera** am Drucker in Prusa Connect an.  
+Die M5Stack **Unit PoE CAM (U121, ESP32 + W5500 + OV2640)** sendet JPEG-Schnappschüsse direkt an Prusa Connect. Ethernet übernimmt die Netzwerkverbindung, ein PoE-Switch oder PoE-Injector die Stromversorgung. Standard: ein Bild alle 10 Sekunden, 1600 × 1200 Pixel, JPEG-Qualitätswert 20.
 
----
+## Reparatur für ausgefallene Kameras
 
-## Funktionen
-- Einfache Einrichtung per **QR-Code-Scan** aus Prusa Connect.  
-- Kamera nimmt periodisch Snapshots auf und überträgt diese an Prusa Connect.  
-- **Kurzer Tastendruck** an der CAM: QR-Code scannen und verbinden.  
-- **Langer Tastendruck**: Zurücksetzen der Kamera (Reset).  
-- Ausgabe von **Fehlercodes** über Display (siehe unten).  
+Bei der Untersuchung am **3. Oktober 2026** antwortete der bisherige Upload-Endpunkt `webcam.connect.prusa3d.com/c/snapshot` mit einer HTTP-301-Weiterleitung. Deren Ziel ist die Webcam-Webanwendung; die aktuelle Upload-API liegt unter **`https://camera-service.prusa3d.com/c/snapshot`**. Der alte Code wertete den HTTP-Status nicht aus und konnte einen fehlgeschlagenen Upload als Erfolg anzeigen.
 
----
+Das bisher eingebettete **ISRG Root X1 ist nicht abgelaufen** (gültig bis Juni 2035). Für den neuen Dienst ergänzt 1.3.0 **GTS Root R1 und R4**. Die TLS-Zertifikatsprüfung bleibt aktiv. Weitere Änderungen:
 
-## Benötigte Hardware
-- **M5Stack PoE-CAM** (ESP32 + W5500 Ethernet).  
-- Ethernet-Kabel, optional PoE-Switch oder PoE-Injector.  
-- Alternativ Stromversorgung über USB-C.  
+- HTTP-Statusauswertung, begrenzte Verbindungs-/Lesezeiten und direkte Übertragung des JPEG-Puffers.
+- Keine automatische Weitergabe von Token und Fingerprint an Weiterleitungsziele; keine Token im seriellen Protokoll.
+- Unterstützung bisheriger `?token=…`-Links und neuer `#t=v1.…`-QR-Codes.
+- Asynchroner NTP-Start, funktionierende LED-Fehlercodes und ein QR-Scan mit 30-Sekunden-Zeitlimit.
+- Abgesicherte Kamera-/QR-Speicherverwaltung sowie Prüfung gespeicherter Einstellungen.
 
----
+**Ein Git-Update aktualisiert die Kameras nicht automatisch.** Jede Kamera muss per Programmer geflasht werden; diese Firmware enthält kein OTA-Update. Zuerst eine Kamera aktualisieren und ihren tatsächlichen Bild-Upload prüfen, anschließend die übrigen Geräte.
 
-## Installation
-### Variante 1: Vorbereitete Firmware (empfohlen)
-1. Auf der [Releases-Seite](../../releases) die aktuelle **BIN-Datei mit Bootloader** herunterladen.  
-   - ⚠️ Achte darauf, die Version **mit Bootloader** zu nehmen (einmalig beim ersten Flash nötig).  
-   - Spätere Updates können auch **ohne Bootloader** installiert werden.  
-2. Mit einem Web-Flasher hochladen, z. B.:  
-   - [ESPHome Web Flasher](https://web.esphome.io)  
-   - oder andere kompatible Web-Flasher für ESP32.  
-3. Gerät auswählen → BIN-Datei hochladen → fertig.  
+## Fertige Firmware installieren
 
-### Variante 2: Manuelles Kompilieren
-1. Repo klonen oder als ZIP herunterladen:  
-   ```bash
-   git clone https://github.com/vothmarkus/PrusaConnectCam-M5Stack-PoECam.git
-   ```
-2. Arduino IDE oder PlatformIO öffnen.  
-3. Projekt `ESP32_PrusaConnectCam_web.ino` öffnen.  
-4. Board auswählen: `ESP32 Dev Module` (oder PoE-CAM spezifisch, falls installiert).  
-5. Kompilieren und auf die CAM flashen.  
+Die PoE-CAM benötigt einen **externen ESP32 Downloader mit passendem PoE-CAM-Adapter**. Ein USB-Kabel allein ist kein Programmer. Anschluss und Download-Modus stehen in der [M5Stack-Anleitung](https://docs.m5stack.com/en/unit/Unit_PoE_CAM). Die Hardware hat 16 MB Flash; diese Firmware behält das bisherige **4-MB-Partitionslayout** bei.
 
----
+| Zweck | Datei | Flash-Adresse | Gespeicherte Kopplung |
+| --- | --- | --- | --- |
+| Vorhandene Installation dieses Projekts aktualisieren | [Update-BIN herunterladen](https://raw.githubusercontent.com/vothmarkus/PrusaConnectCam-M5Stack-PoECam/main/ESP32_PrusaConnectCam_web/build/m5stack.esp32.m5stack_poe_cam/ESP32_PrusaConnectCam_web.ino.bin) | `0x10000` | Bleibt erhalten, wenn kein vollständiges Löschen erfolgt |
+| Erstinstallation / vollständige Neuinstallation | [Merged-BIN herunterladen](https://raw.githubusercontent.com/vothmarkus/PrusaConnectCam-M5Stack-PoECam/main/ESP32_PrusaConnectCam_web/build/m5stack.esp32.m5stack_poe_cam/ESP32_PrusaConnectCam_web.ino.merged.bin) | `0x0` | Wird gelöscht; anschließend neu koppeln |
 
-## Verwendung
-1. **In Prusa Connect anmelden** → Drucker auswählen.  
-2. Im Tab **Kameras** → *Neue Kamera hinzufügen*.  
-3. Als Typ **Other** auswählen → Prusa zeigt einen **QR-Code** an.  
-4. **Kurze Taste** an der M5Stack PoE-CAM drücken.  
-5. Kamera scannt den QR-Code und verbindet sich mit Prusa Connect.  
-6. Fertig – die Kamera taucht nun im Drucker-Dashboard auf.  
+**Für bereits gekoppelte Kameras die Update-BIN verwenden und „Erase all flash“ deaktiviert lassen.** Das Merged-Image enthält auch den leeren Einstellungsbereich und überschreibt vorhandene Token/Fingerprints. Die Update-Anleitung gilt für das bisherige Partitionslayout dieses Repositories, nicht für beliebige Fremdfirmware.
 
-👉 **Reset:** Langer Druck auf die Taste → Gerät zurücksetzen.  
+Beispiel mit Python und esptool 4.8.1, aus dem Download-Ordner:
 
----
+```bash
+python -m pip install esptool==4.8.1
+# /dev/ttyUSB0 durch den eigenen Port ersetzen, unter Windows z. B. COM5.
+python -m esptool --chip esp32 --port /dev/ttyUSB0 --baud 460800 write_flash 0x10000 ESP32_PrusaConnectCam_web.ino.bin
+```
 
-## Fehlercodes (Anzeige durch mehrfaches Blinken)
-Die Firmware zeigt verschiedene Fehlerzustände an:  
+Für die **Erstinstallation** stattdessen:
 
-| Code | Bedeutung |
-|------|-----------|
-| 01   | Fehler beim Kamera-Init |
-| 02   | Netzwerk nicht verbunden |
-| 03   | Ungültiger QR-Code |
-| 04   | Verbindung zu Prusa Connect fehlgeschlagen |
-| 05   | Upload Snapshot fehlgeschlagen |
+```bash
+python -m esptool --chip esp32 --port /dev/ttyUSB0 --baud 460800 write_flash 0x0 ESP32_PrusaConnectCam_web.ino.merged.bin
+```
 
----
+Danach die Kamera neu starten. Bei Verbindungsproblemen zum Programmer mit `--baud 115200` wiederholen. Web-Flasher eignen sich nur, wenn sie den benötigten Offset und das gewünschte Löschverhalten unterstützen. [Prüfsummen und Build-Metadaten](ESP32_PrusaConnectCam_web/build/m5stack.esp32.m5stack_poe_cam/) liegen bei den BIN-Dateien. Der alte Verzeichnisname bleibt für bestehende Download-Links erhalten.
 
-## Bekannte Einschränkungen
-- Es werden ausschließlich **Snapshots** unterstützt (bedingt durch die Prusa Connect API, kein Live-Stream möglich).  
+## Koppeln und bedienen
 
----
+1. In Prusa Connect den Drucker öffnen und eine externe Kamera hinzufügen. Den dort angebotenen Kopplungs-QR-Code anzeigen.
+2. Die Seitentaste der PoE-CAM **kurz drücken und loslassen**. Die blaue LED blinkt schnell, der Scan läuft maximal 30 Sekunden.
+3. Den QR-Code gut beleuchtet und vollständig ins Bild halten. Bei Erfolg speichert die Kamera ihren Token und wechselt zurück zu JPEG-Aufnahmen.
+4. Nach Netzwerkverbindung und Zeitsynchronisation den neuen Schnappschuss in Prusa Connect prüfen.
 
-## Referenzen & Anleitungen
-- 📖 **Prusa Connect Camera API**: [Prusa Connect Camera API Dokumentation](https://help.prusa3d.com/article/prusa-connect-camera-api_569012)  
-- 💡 **Originalprojekt von Prusa Research**: [Prusa-Firmware-ESP32-Cam (GitHub)](https://github.com/prusa3d/Prusa-Firmware-ESP32-Cam)  
-- 📝 **Offizielle Anleitung von Prusa zur ESP-Cam**: [ESP Camera for Prusa Connect (Knowledge Base)](https://help.prusa3d.com/guide/esp-camera-for-prusa-connect_390199)  
+Ein weiterer kurzer Tastendruck bricht den Scan ab. Bei Abbruch, ungültigem QR-Code oder Zeitüberschreitung bleibt eine vorhandene Kopplung erhalten. Unterstützt werden auch QR-Codes mit dem reinen 20-stelligen alphanumerischen Kamera-Token. Die öffentliche `v1`-Verschleierung neuer Prusa-Links ist kein Verschlüsselungsverfahren und kann sich serverseitig ändern.
 
----
+**Taste 5 Sekunden halten:** horizontale Spiegelung umschalten, speichern und neu starten. Das ist **kein Werksreset**; die Kopplung bleibt erhalten. Jede Kamera benötigt ihren eigenen Kopplungs-Token. Einen vollständigen Flash-Abzug einer gekoppelten Kamera nicht auf andere Geräte kopieren.
 
-## ToDo
-- Eventuell MQTT- oder RTSP-Ausgabe zusätzlich implementieren.  
+## LED und Fehlersuche
 
----
+Serieller Monitor: **115200 Baud**. Die blaue LED signalisiert den Zustand; diese Kamera hat kein Display.
 
-## Lizenz
-MIT License
+| Wiederholtes Blinken | Zustand |
+| --- | --- |
+| 1 Sekunde an / 1 Sekunde aus | Ethernet hat noch keine IP-Adresse |
+| 0,25 Sekunden an / aus | NTP-Zeit fehlt; HTTPS wartet auf eine gültige Uhrzeit |
+| 2 Sekunden an / aus | Kein gültiger Kamera-Token gespeichert |
+| Schnell während des Scans | QR-Erkennung aktiv |
+| Sehr schnell bei gehaltener Taste | Nach 5 Sekunden Spiegelung und Neustart |
+
+| Einzelne Blinkfolge nach einem Versuch | Bedeutung |
+| --- | --- |
+| 1 × | Upload erfolgreich (HTTP 2xx); auch Bestätigung eines gespeicherten QR-Tokens |
+| 2 × | DNS-, TCP-, TLS- oder Übertragungsfehler; serielles Protokoll prüfen |
+| 3 × | HTTP 401: nicht autorisiert |
+| 4 × | HTTP 403: Kamera-Zugriff verweigert; Token/Fingerprint/Kopplung prüfen |
+| 5 × | Ungültiger Token beim Upload-Aufruf |
+| 6 × | Fehlender oder ungültiger Fingerprint |
+| 7 × | Anderer HTTP-Fehler, z. B. 301, 404, 429 oder 5xx; Status im Protokoll |
+| 8 × | Kamera-Initialisierung oder Aufnahme fehlgeschlagen |
+
+Im Schulnetz müssen DHCP/DNS, **NTP über UDP 123** zu `pool.ntp.org` oder `time.nist.gov` und **HTTPS über TCP 443** zu `camera-service.prusa3d.com` funktionieren. Captive Portals und authentifizierte Proxys unterstützt die Firmware nicht. Bei einer TLS-Prüfung durch die Schul-Firewall ist deren Zertifikat nicht automatisch vertrauenswürdig; die Netzwerkadministration sollte die Verbindung entsprechend freigeben.
+
+Bei 401/403 zuerst prüfen, ob die Kamera in Prusa Connect noch existiert und zum richtigen Drucker gehört. Falls nötig einen neuen Kopplungs-QR-Code verwenden. Bei `Still waiting for NTP` die Zeitserver-Erreichbarkeit prüfen. Bei HTTP 301/404 den konfigurierten API-Host prüfen. TLS-Probleme durch Aktualisieren der passenden CA-Zertifikate lösen, nicht durch Abschalten der Prüfung.
+
+## Selbst kompilieren und testen
+
+Referenz-Build: **Arduino CLI 1.3.1**, **Espressif Arduino-ESP32 3.2.0**, Board `M5PoECAM` (`esp32:esp32:m5stack_poe_cam`). Es werden nur Bibliotheken aus diesem Core sowie das mitgelieferte `quirc` benötigt; `ArduinoUniqueID` ist nicht mehr erforderlich. PlatformIO-Konfigurationen sind nicht enthalten.
+
+```bash
+git clone https://github.com/vothmarkus/PrusaConnectCam-M5Stack-PoECam.git
+cd PrusaConnectCam-M5Stack-PoECam
+arduino-cli core update-index --additional-urls https://espressif.github.io/arduino-esp32/package_esp32_index.json
+arduino-cli core install esp32:esp32@3.2.0 --additional-urls https://espressif.github.io/arduino-esp32/package_esp32_index.json
+./tools/build.sh
+```
+
+Das Build-Skript benötigt Bash/Python 3 und setzt PSRAM **enabled**, Partition **default**, Flash **4 MB / DIO / 80 MHz**, CPU **240 MHz**, Loop/Event-Core **1**, Debug **none**, vollständiges Löschen **aus**. In der Arduino IDE dieselben Optionen wählen und `ESP32_PrusaConnectCam_web/ESP32_PrusaConnectCam_web.ino` öffnen. Das Skript erzeugt BIN-Dateien, `manifest.json` und `SHA256SUMS` im bestehenden Build-Verzeichnis. Große ELF/MAP-Zwischendateien bleiben unter `.build/`.
+
+Die Tests benötigen Linux, GCC/G++ und Bash:
+
+```bash
+./tests/run.sh
+```
+
+Geprüft werden HTTP-Statusauswertung, beide QR-Link-Formate, fehlerhafte Eingaben, EEPROM-Grenzen, tatsächliche QR-Erkennung einschließlich Spiegelung und simulierte Speicherfehler mit AddressSanitizer/UndefinedBehaviorSanitizer. In Umgebungen ohne LeakSanitizer-Unterstützung: `ASAN_OPTIONS=detect_leaks=0 ./tests/run.sh`; die QR-Tests zählen zusätzlich offene Speicherallokationen.
+
+**Validierungsgrenze:** Kompilierung und Softwaretests ersetzen keinen Test am Gerät mit gültiger Prusa-Kopplung. Die Hardwareprüfung umfasst Kaltstart, aktualisierte Bilder, Netzwerkausfall/-wiederkehr, QR-Kopplung und erhaltene Einstellungen nach Neustart.
+
+## Umfang und Quellen
+
+Diese Firmware bietet Snapshots über Ethernet. Ein lokales Webinterface, RTSP, MQTT und OTA sind nicht implementiert; der historische Sketchname mit `_web` bedeutet kein Webinterface.
+
+- [Prusa Camera API](https://connect.prusa3d.com/docs/cameras/) und [Token/Fingerprint-Kommunikation](https://connect.prusa3d.com/docs/cameras/camera_communication/)
+- [Öffentliche Prusa-Webcam-Anwendung](https://camera-service-webcam.prusa3d.com/) – API-Konfiguration und QR-Link-Format, Stand 03.10.2026
+- [Google Trust Services Root-Zertifikate](https://pki.goog/repository/) und [ISRG-Zertifikate](https://letsencrypt.org/certificates/)
+- [M5Stack Unit PoE CAM](https://docs.m5stack.com/en/unit/Unit_PoE_CAM) und [Arduino-Anleitung](https://docs.m5stack.com/en/arduino/m5poe_cam/program)
+
+Projekt: Markus Voth. Projektlizenz: MIT. Die mitgelieferten `quirc`- und OpenMV-Dateien tragen eigene Lizenz- und Copyright-Hinweise in ihren Quelltexten; diese bleiben erhalten.

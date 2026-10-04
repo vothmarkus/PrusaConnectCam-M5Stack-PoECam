@@ -5,13 +5,9 @@
 #include "mcu_cfg.h"
 #include "esp_camera.h"
 
-extern unsigned long lastMillis;     /* here is saved last refresh call */
 
-extern String photo;                  /* here is saved photo */
-extern size_t height;
-extern size_t width;
-extern uint8_t RefreshInterval;       /* here is saved refresh interval */
-extern String BackendReceivedData;    /* here is saved response from prusa backend. Maybe is good idea send response to WEB page ? or not ? */
+extern camera_fb_t *photoFrame;       /* owned until Camera_ReleasePhoto() */
+extern uint8_t RefreshInterval;
 
 extern String sToken;                 /* token for authentification to prusa backend */
 extern String sFingerprint;           /* fingerprint for autentification to prusa backend */

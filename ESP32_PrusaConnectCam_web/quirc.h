@@ -19,9 +19,6 @@
 
 #include <stdint.h>
 
-#ifndef ps_malloc
-#define ps_malloc malloc
-#endif
 
 #ifdef __cplusplus
 extern "C"
@@ -78,7 +75,8 @@ extern "C"
     QUIRC_ERROR_DATA_ECC,
     QUIRC_ERROR_UNKNOWN_DATA_TYPE,
     QUIRC_ERROR_DATA_OVERFLOW,
-    QUIRC_ERROR_DATA_UNDERFLOW
+    QUIRC_ERROR_DATA_UNDERFLOW,
+    QUIRC_ERROR_MEMORY
   } quirc_decode_error_t;
 
   /* Return a string error message for an error code. */

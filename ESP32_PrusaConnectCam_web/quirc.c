@@ -17,7 +17,19 @@
 #include <stdlib.h>
 #include <string.h>
 #include "quirc_internal.h"
-#include <Arduino.h>
+#include <limits.h>
+#ifdef ESP_PLATFORM
+#include <esp_heap_caps.h>
+#endif
+
+void *quirc_alloc(size_t size)
+{
+#ifdef ESP_PLATFORM
+  void *memory = heap_caps_malloc(size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+  if (memory) return memory;
+#endif
+  return malloc(size);
+}
 
 const char *quirc_version(void)
 {
@@ -27,7 +39,7 @@ const char *quirc_version(void)
 //static struct quirc _q;
 struct quirc *quirc_new(void)
 {
-  struct quirc *q = ps_malloc(sizeof(*q));
+  struct quirc *q = quirc_alloc(sizeof(*q));
 
   if (!q)
     return NULL;
@@ -38,43 +50,31 @@ struct quirc *quirc_new(void)
 
 void quirc_destroy(struct quirc *q)
 {
-  if (q->image)
-    if (q->image)
-      free(q->image);
-  if (sizeof(*q->image) != sizeof(*q->pixels))
-    if (q->pixels)
-      free(q->pixels);
-
-  if (q)
-    free(q);
+  if (!q) return;
+  free(q->image);
+  if (sizeof(*q->image) != sizeof(*q->pixels)) free(q->pixels);
+  free(q);
 }
-
-//static quirc_pixel_t img_buf[320*240];
 int quirc_resize(struct quirc *q, int w, int h)
 {
-  if (q->image)
-  {
-    free(q->image);
-  }
-  uint8_t *new_image = ps_malloc(w * h);
-
-  if (!new_image)
-    return -1;
-
-  if (sizeof(*q->image) != sizeof(*q->pixels))
-  { //should gray, 1==1
-    size_t new_size = w * h * sizeof(quirc_pixel_t);
-    if (q->pixels)
-      free(q->pixels);
-    quirc_pixel_t *new_pixels = ps_malloc(new_size);
-    if (!new_pixels)
-    {
+  if (!q || w <= 0 || h <= 0 || w > INT_MAX / h ||
+      (size_t)w * (size_t)h > SIZE_MAX / sizeof(quirc_pixel_t)) return -1;
+  const size_t size = (size_t)w * (size_t)h;
+  uint8_t *new_image = quirc_alloc(size);
+  if (!new_image) return -1;
+  quirc_pixel_t *new_pixels = NULL;
+  if (sizeof(*q->image) != sizeof(*q->pixels)) {
+    new_pixels = quirc_alloc(size * sizeof(quirc_pixel_t));
+    if (!new_pixels) {
       free(new_image);
       return -1;
     }
-    q->pixels = new_pixels;
   }
+  // Commit only after all allocations succeed; old buffers survive OOM.
+  free(q->image);
+  if (sizeof(*q->image) != sizeof(*q->pixels)) free(q->pixels);
   q->image = new_image;
+  q->pixels = new_pixels;
   q->w = w;
   q->h = h;
   return 0;
@@ -93,6 +93,7 @@ static const char *const error_table[] = {
     [QUIRC_ERROR_DATA_ECC] = "ECC failure",
     [QUIRC_ERROR_UNKNOWN_DATA_TYPE] = "Unknown data type",
     [QUIRC_ERROR_DATA_OVERFLOW] = "Data overflow",
+    [QUIRC_ERROR_MEMORY] = "Out of memory",
     [QUIRC_ERROR_DATA_UNDERFLOW] = "Data underflow"};
 
 const char *quirc_strerror(quirc_decode_error_t err)

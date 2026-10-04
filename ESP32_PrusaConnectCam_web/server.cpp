@@ -1,108 +1,49 @@
 #include "server.h"
 
-/* send photo to prusa backend server */
 uint8_t Server_SendPhotoToPrusaBackend() {
-  uint8_t error = 0;
+  using prusa::UploadResult;
+  if (!prusa::validToken(sToken.c_str(), sToken.length()))
+    return static_cast<uint8_t>(UploadResult::InvalidToken);
+  if (!prusa::validHeaderValue(sFingerprint.c_str(), sFingerprint.length(), EEPROM_ADDR_FINGERPRINT_LENGTH))
+    return static_cast<uint8_t>(UploadResult::InvalidFingerprint);
+  if (!photoFrame || !photoFrame->buf || !photoFrame->len || photoFrame->format != PIXFORMAT_JPEG)
+    return static_cast<uint8_t>(UploadResult::Camera);
 
-  /* check fingerprint and token length */
-  if ((sFingerprint.length() > 0) && (sToken.length() > 0))
-  {
-    Serial.println("\nConnecting to server...");
-
-    NetworkClientSecure client;
-    client.setCACert(rootCA);
-
-    /* connecting to server */
-    if (!client.connect(DOMAIN, 443))
-    {
-        error = 1;
-        Serial.println("CONNECTION FAILED! Error" + String(error));
-    } 
-    else
-    {
-      /* send data to server */
-      Serial.println("Connected to server! Sending image with:");
-      Serial.println("fingerprint: " + sFingerprint);
-      Serial.println("token: " + sToken);
-      
-      client.println("PUT " + String(HOST_URL) + " HTTP/1.0");
-      client.println("Host: " + String(DOMAIN));
-      client.println("User-Agent: ESP32-CAM");
-      client.println("Connection: close");
-
-      client.println("Content-Type: image/jpg");
-      client.println("fingerprint: " + sFingerprint);
-      client.println("token: " + sToken);
-      client.print("Content-Length: ");
-      client.println(photo.length());
-      client.println();
-
-      // photo fragmentation
-      esp_task_wdt_reset();
-      for (int index = 0; index < photo.length(); index = index + PHOTO_FRAGMENT_SIZE) {
-        client.print(photo.substring(index, index + PHOTO_FRAGMENT_SIZE));
-        Serial.println(index);
-      }
-      
-      Serial.println("Send done!");
-      //esp_task_wdt_reset();
-      
-      Serial.println("Waiting for response...?!");
-      unsigned long ms = millis();
-      while (!client.available() && millis() - ms < 1000)
-      {
-          delay(0);
-      }
-      Serial.println();
-      
-      /* check response header */
-      ms = millis();
-      while (client.connected() && millis() - ms < 500) {
-        String line = client.readStringUntil('\n');
-        if (line == "\r") {
-          Serial.print("Headers received: ");
-          Serial.println(line);
-          break;
-        }
-      }
-
-      /* check response data */
-      Serial.print("Received data[");
-      BackendReceivedData = "";
-      while (client.available()) {
-        BackendReceivedData += (char) client.read();
-      }
-      Serial.print(BackendReceivedData.length());
-      Serial.print("]: ");
-      Serial.println(BackendReceivedData);
-      if(BackendReceivedData.indexOf("UNAUTHORIZED") != -1)
-        error = 2;
-      else if(BackendReceivedData.indexOf("FORBIDDEN_INVALID_FINGERPRINT") != -1)
-        error = 3;
-        
-      client.stop();
-    }
-  } 
-  else
-  {
-    /* err message */
-    Serial.println("ERROR SEND PICTURE TO SERVER! INVALID DATA!");
-    Serial.print("Fingerprint: ");
-    Serial.println(sFingerprint);
-    Serial.print("Token: ");
-    Serial.println(sToken);
-    if (sToken.length() == 0)
-    {
-        error = 4;
-        Serial.println("INVALID TOKEN DATA! Error " + String(error));
-    }
-    else if (sFingerprint.length() == 0)
-    {
-        error = 5;
-        Serial.println("INVALID FINGERPRINT DATA! Error " + String(error));
-    }
+  NetworkClientSecure client;
+  client.setCACert(rootCA);
+  client.setHandshakeTimeout(TLS_HANDSHAKE_TIMEOUT_S);
+  HTTPClient http;
+  http.setConnectTimeout(HTTP_CONNECT_TIMEOUT_MS);
+  http.setTimeout(HTTP_READ_TIMEOUT_MS);
+  http.setReuse(false);
+  // Never forward camera credentials to a redirect destination.
+  http.setFollowRedirects(HTTPC_DISABLE_FOLLOW_REDIRECTS);
+  if (!http.begin(client, HOST_URL)) {
+    Serial.println("Unable to initialize HTTPS upload");
+    return static_cast<uint8_t>(UploadResult::Connection);
   }
-  return error;
+  http.setUserAgent("M5PoECAM-PrusaConnect/" SW_VERSION);
+  http.addHeader("Content-Type", "image/jpeg");
+  http.addHeader("Token", sToken);
+  http.addHeader("Fingerprint", sFingerprint);
+  Serial.printf("Uploading %u bytes to %s\n", static_cast<unsigned>(photoFrame->len), DOMAIN);
+  const int status = http.sendRequest("PUT", photoFrame->buf, photoFrame->len);
+  if (status > 0) {
+    Serial.printf("Snapshot HTTP status: %d\n", status);
+    if (status >= 300 && status < 400)
+      Serial.println("Redirect rejected: check the configured API endpoint");
+    else if (status == 401 || status == 403)
+      Serial.println("Camera access denied: check pairing/token and stored fingerprint");
+    else if (status == 429)
+      Serial.println("Upload rate limited by server");
+  } else {
+    Serial.printf("HTTPS upload failed: %s (%d)\n", HTTPClient::errorToString(status).c_str(), status);
+    char message[160] = {};
+    const int tlsError = client.lastError(message, sizeof(message));
+    if (tlsError) Serial.printf("TLS error %d: %s\n", tlsError, message);
+  }
+  // Only 2xx is success; no response body or credentials are logged.
+  http.end();
+  client.stop();
+  return static_cast<uint8_t>(prusa::uploadResult(status));
 }
-
-/* EOF */
