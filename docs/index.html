@@ -42,10 +42,16 @@
     <h2>Vorbereitung</h2>
     <ol>
       <li>PoE-CAM über einen geeigneten ESP32-Downloader/PoE-CAM-Adapter mit dem Computer oder Android-Gerät verbinden.</li>
-      <li>Desktop: Chrome oder Edge verwenden. Android: aktuelles Chrome (Web Serial ab Chrome 148) und USB-Host/OTG verwenden. Web Serial benötigt HTTPS.</li>
+      <li>Desktop: Chrome oder Edge verwenden. Android: die Seite direkt in Chrome öffnen und einen USB-Host/OTG-Adapter mit Datenkabel verwenden.</li>
       <li>Für bereits gekoppelte Kameras ausschließlich <strong>Update</strong> verwenden.</li>
     </ol>
     <div class="row">
+      <label>Verbindung
+        <select id="connection">
+          <option value="serial">PC / natives Web Serial</option>
+          <option value="usb">Android USB (CH9102)</option>
+        </select>
+      </label>
       <label>Baudrate
         <select id="baud">
           <option value="460800" selected>460800</option>
@@ -54,6 +60,8 @@
       </label>
     </div>
     <p id="platformInfo" class="muted">Browser-Unterstützung wird geprüft …</p>
+    <button id="probe" class="secondary">Downloader erkennen</button>
+    <p class="muted">Prüft die Verbindung und startet die Kamera anschließend neu. Firmware und Kopplung werden dabei nicht überschrieben.</p>
   </div>
 
   <div class="card safe">
@@ -73,10 +81,6 @@
     <h2>Status</h2>
     <progress id="progress" value="0" max="100"></progress>
     <pre id="status">Bereit.</pre>
-    <div class="row">
-      <button id="reset" class="secondary" disabled>Gerät neu starten</button>
-      <button id="disconnect" class="secondary" disabled>Trennen</button>
-    </div>
   </div>
 
   <p class="muted">Die Firmwaredateien werden vor dem Flashen per SHA-256 geprüft. Diese Seite sendet keine Zugangsdaten oder Kamera-Token.</p>
@@ -84,6 +88,7 @@
 
 <script type="module">
   import { ESPLoader, Transport } from "https://unpkg.com/esptool-js@0.7.0/bundle.js";
+  import { defaultConnection, requestProgrammerPort } from "./serial-port.mjs";
 
   const BASE = "https://raw.githubusercontent.com/vothmarkus/PrusaConnectCam-M5Stack-PoECam/main/ESP32_PrusaConnectCam_web/build/m5stack.esp32.m5stack_poe_cam/";
   const FW = {
@@ -112,18 +117,16 @@
 
   function showPlatformSupport() {
     const info = $("platformInfo");
-    const ua = navigator.userAgent || "";
-    const isAndroid = /Android/i.test(ua);
-    if ("serial" in navigator) {
-      info.className = "ok";
-      info.textContent = isAndroid
-        ? "Android erkannt · native Web-Serial-Unterstützung verfügbar. Es wird derselbe Flashpfad wie am Desktop verwendet."
-        : "Native Web-Serial-Unterstützung verfügbar. Der bewährte Desktop-Flashpfad ist aktiv.";
+    if ($("connection").value === "usb") {
+      info.className = navigator.usb ? "info" : "warning";
+      info.textContent = navigator.usb
+        ? "USB-Zugang für M5Stack-Downloader mit CH9102. In der Geräteauswahl USB-Enhanced-SERIAL CH9102 wählen. Wenn kein Gerät erscheint: USB-Host/OTG, Datenkabel und USB-Freigabe prüfen. Ältere CP2104-Downloader bitte am PC verwenden."
+        : "Dieser Browser bietet keinen USB-Zugriff. Bitte die Seite direkt in Chrome über HTTPS öffnen.";
     } else {
-      info.className = "warning";
-      info.textContent = isAndroid
-        ? "Android erkannt, aber dieser Browser stellt Web Serial nicht bereit. Chrome aktualisieren (mindestens Version 148) oder den Desktop-Flasher verwenden."
-        : "Dieser Browser stellt Web Serial nicht bereit. Bitte aktuelles Chrome oder Edge verwenden.";
+      info.className = navigator.serial ? "info" : "warning";
+      info.textContent = navigator.serial
+        ? "Native serielle Geräteauswahl. Zeigt Android hier nur Bluetooth-Geräte, oben auf Android USB (CH9102) wechseln."
+        : "Dieser Browser bietet kein Web Serial. Am PC Chrome oder Edge verwenden; auf Android den USB-Zugang wählen.";
     }
   }
 
@@ -137,12 +140,15 @@
     $("update").disabled = value;
     $("install").disabled = value || !$("confirmErase").checked;
     $("baud").disabled = value;
+    $("connection").disabled = value;
+    $("probe").disabled = value;
+    $("confirmErase").disabled = value;
   }
   function hex(buffer) {
     return [...new Uint8Array(buffer)].map(b => b.toString(16).padStart(2, "0")).join("");
   }
   async function fetchAndVerify(info) {
-    setStatus("Firmware wird geladen …");
+    log("Firmware wird geladen …");
     const response = await fetch(BASE + info.file, { cache: "no-store" });
     if (!response.ok) throw new Error("Firmware-Download fehlgeschlagen: HTTP " + response.status);
     const data = new Uint8Array(await response.arrayBuffer());
@@ -152,9 +158,7 @@
     log("SHA-256 geprüft: OK");
     return data;
   }
-  async function connect() {
-    if (!("serial" in navigator)) throw new Error("Web Serial wird von diesem Browser nicht unterstützt. Bitte Chrome oder Edge verwenden.");
-    const port = await navigator.serial.requestPort();
+  async function connect(port) {
     transport = new Transport(port, true);
     loader = new ESPLoader({
       transport,
@@ -168,28 +172,26 @@
     });
     const chip = await loader.main();
     log("Verbunden: " + chip);
-    if (!String(chip).toUpperCase().includes("ESP32")) {
+    if (loader.chip?.CHIP_NAME !== "ESP32") {
       throw new Error("Unerwarteter Chip: " + chip + ". Erwartet wird ESP32.");
     }
-    $("reset").disabled = false;
-    $("disconnect").disabled = false;
   }
   async function cleanup() {
     try { if (transport) await transport.disconnect(); } catch (_) {}
     transport = null;
     loader = null;
-    $("reset").disabled = true;
-    $("disconnect").disabled = true;
   }
   async function flash(kind) {
     if (busy) return;
     const info = FW[kind];
     setBusy(true);
     progress.value = 0;
+    setStatus("Programmer auswählen …");
     try {
+      // Android requires the chooser to run while this click is still active.
+      const port = await requestProgrammerPort($("connection").value);
       const data = await fetchAndVerify(info);
-      log("Programmer auswählen …");
-      await connect();
+      await connect(port);
       if (kind === "update") {
         log("Update-Modus: eraseAll = false, Zieladresse 0x10000.");
       } else {
@@ -213,14 +215,40 @@
       log("Fertig. Nach dem Neustart den Bild-Upload in Prusa Connect prüfen.");
     } catch (err) {
       log("FEHLER: " + (err?.message || String(err)));
-      log("Bei Verbindungsproblemen 115200 Baud wählen und erneut versuchen.");
+      log("Bei leerer USB-Auswahl: OTG/Datenkabel und USB-Freigabe prüfen. Bei Verbindungsfehlern: 115200 Baud verwenden.");
     } finally {
       await cleanup();
       setBusy(false);
     }
   }
 
+  async function probe() {
+    if (busy) return;
+    setBusy(true);
+    progress.value = 0;
+    setStatus("Programmer auswählen – Verbindungstest ohne Flashen …");
+    try {
+      const port = await requestProgrammerPort($("connection").value);
+      await connect(port);
+      log("Downloader und ESP32 erkannt. Es wurde keine Firmware geschrieben.");
+      await loader.after("hard_reset");
+      log("Kamera neu gestartet.");
+    } catch (err) {
+      log("FEHLER: " + (err?.message || String(err)));
+    } finally {
+      await cleanup();
+      setBusy(false);
+    }
+  }
+
+  $("connection").value = defaultConnection();
+  if ($("connection").value === "usb") $("baud").value = "115200";
   showPlatformSupport();
+  $("connection").addEventListener("change", () => {
+    if ($("connection").value === "usb") $("baud").value = "115200";
+    showPlatformSupport();
+  });
+  $("probe").addEventListener("click", probe);
 
   $("confirmErase").addEventListener("change", () => {
     $("install").disabled = busy || !$("confirmErase").checked;
@@ -229,13 +257,6 @@
   $("install").addEventListener("click", () => {
     if (!$("confirmErase").checked) return;
     flash("install");
-  });
-  $("reset").addEventListener("click", async () => {
-    try { await loader?.after("hard_reset"); log("Reset ausgelöst."); } catch (e) { log("Reset fehlgeschlagen: " + e); }
-  });
-  $("disconnect").addEventListener("click", async () => {
-    await cleanup();
-    log("Verbindung getrennt.");
   });
 </script>
 </body>

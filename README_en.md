@@ -6,7 +6,7 @@ The M5Stack **Unit PoE CAM (U121, ESP32 + W5500 + OV2640)** sends JPEG snapshots
 
 ## Camera startup failure after updating to 1.3.0
 
-**1.3.1 restores the board package used by the previously working firmware.** The original ELF committed in `1afe580` records **M5Stack 3.2.2**, ESP-IDF `v5.4.2-25-g858a988d6e` and the board options documented below. Version 1.3.0 was accidentally built with **Espressif 3.2.0** and a different SDK. This unnecessary change is the suspected cause of the reported camera startup failure; sensor pins were unchanged. Confirmation on a physical device is still pending.
+**1.3.1 restores the board package used by the previously working firmware.** The original ELF committed in `1afe580` records **M5Stack 3.2.2**, ESP-IDF `v5.4.2-25-g858a988d6e` and the board options documented below. Version 1.3.0 was accidentally built with **Espressif 3.2.0** and a different SDK. This unnecessary change is the suspected cause of the reported camera startup failure; sensor pins were unchanged. Successful operation after a PC update was confirmed on 5 October 2026.
 
 **8 flashes**, `i2c.master: probe device timeout` and `Camera probe failed ... 0x105 (ESP_ERR_NOT_FOUND)` indicate that sensor detection failed before any HTTPS upload. This particular failure is not caused by an SSL certificate.
 
@@ -52,6 +52,16 @@ python -m esptool --chip esp32 --port /dev/ttyUSB0 --baud 460800 write_flash 0x0
 ```
 
 Restart after flashing. If the programmer connection is unreliable, retry with `--baud 115200`. A web flasher is suitable only if it supports the required offset and erase behavior. [Checksums and build metadata](ESP32_PrusaConnectCam_web/build/m5stack.esp32.m5stack_poe_cam/) accompany the binaries. The legacy directory name is retained for existing download links.
+
+### Android USB flasher
+
+Open the [web flasher](https://vothmarkus.github.io/PrusaConnectCam-M5Stack-PoECam/) directly in Chrome over HTTPS. The presence of `navigator.serial` does **not** guarantee USB support on Android: it may expose only Bluetooth. Native wired serial support also depends on Android version and device configuration ([Chromium announcement](https://groups.google.com/a/chromium.org/g/blink-dev/c/HBJ-uYFvkpM/m/MrLnwZlsAAAJ)).
+
+Android now defaults to **“Android USB (CH9102)”**, using WebUSB and a pinned Google CDC-ACM polyfill for the M5Stack downloader with USB ID **`1a86:55d4`**. Firmware and esptool-js are unchanged. This path does not support older **CP2104** downloaders; use those on a PC.
+
+Connect the phone through a USB-C **OTG/host adapter with a USB-A socket** and an A-to-C **data cable** to the downloader. Start at **115200 baud**. A connector adapter alone does not guarantee USB host support; direct C-to-C requires compatible USB-C wiring in the downloader. Press **“Downloader erkennen”**, choose the CH9102 USB device and grant access. This detects and restarts the ESP32 without writing firmware or erasing pairing. Use the application update afterward if needed.
+
+A Bluetooth-only list means native serial mode or an older page is still active. If the USB list is also empty, check OTG/host mode, data cable and power, and close other USB applications. The polyfill and license are in `docs/vendor/`. Software checks pass; a physical Android flash test is still pending.
 
 ## Pairing and controls
 
@@ -114,6 +124,8 @@ Host tests require Linux, GCC/G++ and Bash:
 ```
 
 Tests cover HTTP statuses, both pairing URL formats, malformed input, EEPROM bounds, actual QR recognition including mirrored images, and allocation failures under AddressSanitizer/UndefinedBehaviorSanitizer. If LeakSanitizer cannot run in your environment, use `ASAN_OPTIONS=detect_leaks=0 ./tests/run.sh`; QR tests also count outstanding allocations.
+
+Web flasher tests (Node.js 22+): `node --test tests/web_flasher_test.mjs`. These cover Android exposing Bluetooth Serial and WebUSB at once, CDC control requests, in-place baud changes, selection before downloads, hash/chip rejection and the pairing-preserving update offset.
 
 **Validation limit:** compilation and software tests do not replace testing a physical camera with valid Prusa credentials. Check cold boot, fresh snapshots, network loss/recovery, QR pairing and retained settings after reboot.
 

@@ -6,7 +6,7 @@ Die M5Stack **Unit PoE CAM (U121, ESP32 + W5500 + OV2640)** sendet JPEG-Schnapps
 
 ## Kamera-Startfehler nach Update auf 1.3.0
 
-**1.3.1 stellt das Board-Paket der zuvor funktionierenden Firmware wieder her.** Die im ursprünglichen Commit `1afe580` gespeicherte ELF-Datei belegt **M5Stack 3.2.2**, ESP-IDF `v5.4.2-25-g858a988d6e` und die unten dokumentierten Board-Optionen. Beim Build von 1.3.0 wurde versehentlich **Espressif 3.2.0** mit einem anderen SDK verwendet. Dieser unnötige Wechsel ist die vermutete Ursache des gemeldeten Kamera-Startfehlers; die Sensor-Pins waren unverändert. Die Bestätigung am Gerät steht noch aus.
+**1.3.1 stellt das Board-Paket der zuvor funktionierenden Firmware wieder her.** Die im ursprünglichen Commit `1afe580` gespeicherte ELF-Datei belegt **M5Stack 3.2.2**, ESP-IDF `v5.4.2-25-g858a988d6e` und die unten dokumentierten Board-Optionen. Beim Build von 1.3.0 wurde versehentlich **Espressif 3.2.0** mit einem anderen SDK verwendet. Dieser unnötige Wechsel ist die vermutete Ursache des gemeldeten Kamera-Startfehlers; die Sensor-Pins waren unverändert. Am 5. Oktober 2026 wurde der erfolgreiche Betrieb nach dem Update über den PC bestätigt.
 
 **8-maliges Blinken**, `i2c.master: probe device timeout` und `Camera probe failed ... 0x105 (ESP_ERR_NOT_FOUND)` bedeuten: Der Kamerasensor wird beim Start nicht erkannt. Dieser Fehler tritt vor dem HTTPS-Upload auf und wird nicht durch ein SSL-Zertifikat verursacht.
 
@@ -64,7 +64,17 @@ Unter [`docs/index.html`](docs/index.html) liegt ein browserbasierter Flasher au
 
 Für den Web-Flasher wird weiterhin der externe ESP32-Downloader/PoE-CAM-Adapter benötigt. Die Seite muss über **HTTPS** ausgeliefert werden, beispielsweise über GitHub Pages; lokal per `file://` steht Web Serial nicht zuverlässig zur Verfügung.
 
-**Android:** Chrome unterstützt die Web Serial API seit Version 148 auch auf Android. Der Flasher verwendet dort bewusst denselben bereits funktionierenden Web-Serial-Pfad wie am Desktop; es gibt keinen separaten experimentellen Flash-Algorithmus. Benötigt werden ein Android-Gerät mit USB-Host/OTG, ein Datenkabel/Adapter und der M5Stack-Downloader. Die Seite zeigt direkt an, ob `navigator.serial` im verwendeten Browser verfügbar ist.
+**Android:** Die bisherige Prüfung auf `navigator.serial` war unzureichend: Die API kann auf Android nur Bluetooth-Geräte anbieten. Native Unterstützung kabelgebundener serieller Geräte hängt zusätzlich von Android-Version und Gerätehersteller ab; Chrome 148 allein genügt nicht. Siehe die [Chromium-Ankündigung zu den Systemvoraussetzungen](https://groups.google.com/a/chromium.org/g/blink-dev/c/HBJ-uYFvkpM/m/MrLnwZlsAAAJ).
+
+Der Flasher wählt auf Android jetzt **„Android USB (CH9102)“** und greift über WebUSB auf den M5Stack-Downloader mit USB-ID **`1a86:55d4`** zu. Dieser Chip unterstützt CDC-ACM. Esptool-js und die Firmware bleiben dabei unverändert. Ältere M5Stack-Downloader mit **CP2104** werden von diesem USB-Zugang nicht unterstützt; sie können weiter am PC verwendet werden.
+
+1. Die Seite **direkt in Chrome** öffnen, über HTTPS und außerhalb eines eingebetteten App-Browsers.
+2. Handy über einen **USB-C-OTG-/Host-Adapter mit USB-A-Buchse** und ein USB-A-auf-USB-C-**Datenkabel** mit dem Downloader verbinden. Ein Steckeradapter allein garantiert keine Host-Funktion. Ein direktes C-auf-C-Kabel funktioniert nur bei passender USB-C-Beschaltung des Downloaders.
+3. Verbindung **„Android USB (CH9102)“**, zunächst **115200 Baud**. Diese Optionen werden auf Android vorausgewählt.
+4. **„Downloader erkennen“** drücken und `USB-Enhanced-SERIAL CH9102` (oder den entsprechenden USB-Gerätenamen) auswählen. Chrome den USB-Zugriff erlauben. Der Test erkennt den ESP32 und startet ihn wieder; Firmware und Kopplung werden nicht überschrieben.
+5. Erst danach bei Bedarf **„Kamera auf 1.3.1 aktualisieren“** verwenden.
+
+Erscheint weiterhin nur eine Bluetooth-Liste, ist noch der native Modus oder eine alte Seitenversion aktiv. Bleibt auch die USB-Liste leer, OTG-/Host-Modus, Datenkabel und Stromversorgung prüfen und andere USB-Apps schließen. Die Google-CDC-ACM-Bibliothek liegt mit Versionsbindung und Lizenz unter `docs/vendor/`. Softwaretests prüfen den neuen Zugang; ein physischer Android-Flash-Test steht noch aus.
 
 ## Koppeln und bedienen
 
@@ -127,6 +137,8 @@ Die Tests benötigen Linux, GCC/G++ und Bash:
 ```
 
 Geprüft werden HTTP-Statusauswertung, beide QR-Link-Formate, fehlerhafte Eingaben, EEPROM-Grenzen, tatsächliche QR-Erkennung einschließlich Spiegelung und simulierte Speicherfehler mit AddressSanitizer/UndefinedBehaviorSanitizer. In Umgebungen ohne LeakSanitizer-Unterstützung: `ASAN_OPTIONS=detect_leaks=0 ./tests/run.sh`; die QR-Tests zählen zusätzlich offene Speicherallokationen.
+
+Web-Flasher-Tests (Node.js 22 oder neuer): `node --test tests/web_flasher_test.mjs`. Sie prüfen Android mit gleichzeitig vorhandener Bluetooth-Serial-API, CDC-Steuerbefehle, Baudwechsel ohne USB-Neustart, Geräteauswahl vor dem Download sowie Abbruch bei falscher Prüfsumme/falschem Chip und den Erhalt des Update-Offsets.
 
 **Validierungsgrenze:** Kompilierung und Softwaretests ersetzen keinen Test am Gerät mit gültiger Prusa-Kopplung. Die Hardwareprüfung umfasst Kaltstart, aktualisierte Bilder, Netzwerkausfall/-wiederkehr, QR-Kopplung und erhaltene Einstellungen nach Neustart.
 
