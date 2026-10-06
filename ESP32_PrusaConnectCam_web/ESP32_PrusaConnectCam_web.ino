@@ -11,6 +11,7 @@
 #include "var.h"
 #include "mcu_cfg.h"
 #include "qr.h"
+#include "ota.h"
 
 Ticker blinker;
 static volatile bool ethConnected = false;
@@ -98,7 +99,7 @@ void onEvent(arduino_event_id_t event, arduino_event_info_t info) {
     default: break;
   }
 }
-void ETH_Init() {
+bool ETH_Init() {
   char hostname[24];
   const uint64_t mac = ESP.getEfuseMac();
   // getEfuseMac stores MAC bytes little-endian; use the device suffix.
@@ -109,8 +110,10 @@ void ETH_Init() {
   EthernetDeciveName = hostname;
   Network.onEvent(onEvent);
   SPI.begin(ETH_SPI_SCK, ETH_SPI_MISO, ETH_SPI_MOSI, ETH_PHY_CS);
-  if (!ETH.begin(ETH_PHY_TYPE, ETH_PHY_ADDR, ETH_PHY_CS, ETH_PHY_IRQ, ETH_PHY_RST, SPI))
+  const bool ready = ETH.begin(ETH_PHY_TYPE, ETH_PHY_ADDR, ETH_PHY_CS, ETH_PHY_IRQ, ETH_PHY_RST, SPI);
+  if (!ready)
     Serial.println("Ethernet initialization failed");
+  return ready;
 }
 void scanQr() {
   Serial.println("QR scan started (30 s); short button press cancels");
@@ -149,15 +152,18 @@ void setup() {
                 ARDUINO_BOARD, ESP_ARDUINO_VERSION_STR, ESP.getSdkVersion(),
                 static_cast<unsigned>(ESP.getPsramSize()));
   GPIO_Init();
+  Ota_Begin();
   Cfg_Init();
-  Camera_InitCamera();
-  ETH_Init();
+  const bool cameraReady = Camera_InitCamera();
+  const bool ethernetReady = ETH_Init();
+  Ota_SetHardwareHealth(cameraReady, ethernetReady);
 }
 SET_LOOP_TASK_STACK_SIZE(40 * 1024); // quirc structures use stack space
 void loop() {
   static int64_t lastSlot = -1;
   static uint32_t lastAttempt = 0;
   static uint32_t lastNtpLog = 0;
+  Ota_Loop(ethConnected, time(nullptr));
   if (shortButtonPress()) scanQr();
   if (!ethConnected) {
     setLedMode(1);

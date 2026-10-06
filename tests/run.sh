@@ -8,6 +8,8 @@ cc=${CC:-gcc}
 flags=(-g -O1 -fsanitize=address,undefined -fno-omit-frame-pointer -fno-pie)
 "$cxx" -std=c++17 -Wall -Wextra -Werror "${flags[@]}" -no-pie "$repo/tests/protocol_test.cpp" -o "$build/protocol_test"
 "$build/protocol_test"
+"$cxx" -std=c++17 -Wall -Wextra -Werror "${flags[@]}" -no-pie "$repo/tests/ota_test.cpp" -lcrypto -o "$build/ota_test"
+"$build/ota_test"
 objects=()
 for source in quirc decode identify version_db collections; do
   "$cc" -std=gnu11 "${flags[@]}" -Dmalloc=test_malloc -Dfree=test_free \

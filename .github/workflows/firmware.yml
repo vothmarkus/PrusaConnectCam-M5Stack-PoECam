@@ -1,0 +1,64 @@
+name: Validate firmware and prepare release
+
+on:
+  push:
+    branches: [main]
+    paths: ["ESP32_PrusaConnectCam_web/**", "tools/**", "tests/**", "docs/**", ".github/workflows/firmware.yml"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: firmware-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Host tests with sanitizers
+        run: bash tests/run.sh
+      - name: USB flasher tests
+        run: node --test tests/web_flasher_test.mjs
+      - name: Verify committed firmware and release assets
+        run: python3 tools/check_release.py
+
+  draft:
+    needs: validate
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+      - name: Prepare draft, never publish automatically
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          dir=ESP32_PrusaConnectCam_web/build/m5stack.esp32.m5stack_poe_cam
+          version=$(python3 -c 'import json; print(json.load(open("ESP32_PrusaConnectCam_web/build/m5stack.esp32.m5stack_poe_cam/manifest.json"))["firmware_version"])')
+          tag="v${version}"
+          if gh release view "$tag" --json isDraft > release-state.json 2>/dev/null; then
+            if ! python3 -c 'import json,sys; sys.exit(0 if json.load(open("release-state.json"))["isDraft"] else 1)'; then
+              mkdir published
+              gh release download "$tag" --pattern ota-manifest.json --dir published
+              if ! cmp "$dir/ota-manifest.json" published/ota-manifest.json; then
+                echo "Published release $tag is immutable; bump SW_VERSION for changed firmware."
+                exit 1
+              fi
+              echo "Published release $tag already contains these exact firmware bytes."
+              exit 0
+            fi
+            gh release edit "$tag" --target "$GITHUB_SHA"
+          else
+            python3 tools/release_notes.py > release-notes.md
+            gh release create "$tag" --target "$GITHUB_SHA" --draft --title "Firmware $version" --notes-file release-notes.md
+          fi
+          gh release upload "$tag" "$dir"/*.bin "$dir/manifest.json" "$dir/ota-manifest.json" "$dir/SHA256SUMS" --clobber

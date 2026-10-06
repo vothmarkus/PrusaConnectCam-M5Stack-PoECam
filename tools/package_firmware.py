@@ -6,6 +6,7 @@ from pathlib import Path
 import re
 import shutil
 import subprocess
+from artifact_meta import ota_manifest, source_digest
 
 repo = Path(__file__).resolve().parent.parent
 sketch = "ESP32_PrusaConnectCam_web"
@@ -21,6 +22,14 @@ if app[32:36] != bytes.fromhex("3254cdab") or idf_version != "v5.4.2-25-g858a988
     raise SystemExit("SDK differs from the original working firmware; review before publishing")
 if ("M5PoECAM Prusa Connect " + version).encode() not in app:
     raise SystemExit("Firmware version does not match the compiled image; rebuild first")
+if len(app) > 0x140000:
+    raise SystemExit("Firmware exceeds the 1280 KiB OTA slot")
+link_map = (build / f"{sketch}.ino.map").read_text()
+if not re.search(r"^verifyRollbackLater\s+.*[/\\]sketch[/\\]ota.cpp.o$", link_map, flags=re.M):
+    raise SystemExit("Arduino rollback hook does not resolve to ota.cpp; automatic boot confirmation would defeat self-test")
+bootloader = (build / f"{sketch}.ino.bootloader.bin").read_bytes()
+if hashlib.sha256(bootloader).hexdigest() != "a284abdd0e4339f9ae18030953606a21d9d2f86d41d78ac46d606226f03ba939":
+    raise SystemExit("Bootloader differs from the original rollback-capable M5Stack bootloader")
 # Preserve existing download paths.
 output = repo / sketch / "build/m5stack.esp32.m5stack_poe_cam"
 output.mkdir(parents=True, exist_ok=True)
@@ -37,14 +46,22 @@ for suffix, offset in [("bin", "0x10000"), ("bootloader.bin", "0x1000"),
     shutil.copyfile(source, output / name)
     images[name] = {"offset": offset, "bytes": source.stat().st_size,
                    "sha256": hashlib.sha256(source.read_bytes()).hexdigest()}
+# USB recovery selects app0 after writing it, even when OTA last selected app1.
+# This is exactly the two otadata sectors; the preceding NVS is untouched.
+reset = bytes([255]) * 0x2000
+(output / "ota-reset.bin").write_bytes(reset)
+images["ota-reset.bin"] = {"offset": "0xe000", "bytes": len(reset), "sha256": hashlib.sha256(reset).hexdigest()}
 cli_version = subprocess.check_output([os.environ.get("ARDUINO_CLI", "arduino-cli"), "version"], text=True).strip()
-manifest = {"firmware_version": version, "arduino_cli": cli_version,
+manifest = {"firmware_version": version, "source_sha256": source_digest(repo), "arduino_cli": cli_version,
             "core": "m5stack:esp32@3.2.2", "board": "m5stack:esp32:m5stack_poe_cam",
             "arduino_core_version": "3.2.1", "esp_idf": idf_version, "fqbn": fqbn,
             "settings": {"psram": "enabled", "partition_scheme": "default", "flash_mode": "qio",
                          "flash_frequency_mhz": 80, "flash_layout_mb": 4, "cpu_mhz": 240},
+            "ota": {"target": "m5stack-poe-cam-u121", "layout": "default-4m-ota-1280k-v1",
+                    "slot_bytes": 0x140000, "bootloader_rollback": True, "boot_test_override": True},
             "images": images}
 (output / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
+(output / "ota-manifest.json").write_text(json.dumps(ota_manifest(version, app), indent=2) + "\n")
 (output / "SHA256SUMS").write_text("".join(f"{v['sha256']}  {k}\n" for k, v in images.items()))
 # Keep the browser flasher's integrity checks in sync with these exact images.
 flasher_path = repo / "docs/index.html"
@@ -55,6 +72,10 @@ for kind, suffix, erase in [("update", "bin", False), ("install", "merged.bin", 
     info = images[name]
     web_images[kind] = {"file": name, "address": int(info["offset"], 16),
                         "bytes": info["bytes"], "sha256": info["sha256"], "eraseAll": erase}
+for kind, name in [("bootloader", f"{sketch}.ino.bootloader.bin"), ("otaReset", "ota-reset.bin")]:
+    info = images[name]
+    web_images[kind] = {"file": name, "address": int(info["offset"], 16), "bytes": info["bytes"],
+                        "sha256": info["sha256"], "eraseAll": False}
 block = "  const FW = " + json.dumps(web_images, indent=2).replace("\n", "\n  ") + ";"
 flasher, count = re.subn(r"  const FW = \{.*?\n  \};", lambda _: block, flasher, flags=re.S)
 if count != 1:

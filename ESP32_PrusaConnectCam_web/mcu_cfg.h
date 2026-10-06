@@ -1,7 +1,7 @@
 #ifndef _MCU_CFG_H_
 #define _MCU_CFG_H_
 
-#define SW_VERSION         "1.3.1"
+#define SW_VERSION         "1.4.0"
 
 #define QR_TIMEOUT          30              /* QR reading timeout second */
 

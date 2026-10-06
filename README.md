@@ -1,122 +1,139 @@
 # PrusaConnectCam – M5Stack PoE-CAM
 
-[English](README_en.md) · Firmware **1.3.1**
+[English](README_en.md) · Firmware **1.4.0** · [Web-Flasher](https://vothmarkus.github.io/PrusaConnectCam-M5Stack-PoECam/)
 
-Die M5Stack **Unit PoE CAM (U121, ESP32 + W5500 + OV2640)** sendet JPEG-Schnappschüsse direkt an Prusa Connect. Ethernet übernimmt die Netzwerkverbindung, ein PoE-Switch oder PoE-Injector die Stromversorgung. Standard: ein Bild alle 10 Sekunden, 1600 × 1200 Pixel, JPEG-Qualitätswert 20.
+Die **M5Stack Unit PoE CAM U121** (ESP32, W5500, OV2640) sendet JPEG-Schnappschüsse über Ethernet an Prusa Connect. Ein PoE-Switch oder PoE-Injector versorgt sie mit Strom. Standard: ein Bild alle 10 Sekunden, 1600 × 1200 Pixel, JPEG-Qualitätswert 20.
 
-## Kamera-Startfehler nach Update auf 1.3.0
+**Neu in 1.4.0:** nächtliche Firmware-Updates aus veröffentlichten GitHub-Releases, geprüfte HTTPS-Downloads, Start-Selbsttest und Bootloader-Rollback. Das funktionierende **M5Stack-Boardpaket 3.2.2**, Kamera-Pins und Partitionslayout bleiben die Grundlage. Der ursprüngliche Bootloader ist byteidentisch.
 
-**1.3.1 stellt das Board-Paket der zuvor funktionierenden Firmware wieder her.** Die im ursprünglichen Commit `1afe580` gespeicherte ELF-Datei belegt **M5Stack 3.2.2**, ESP-IDF `v5.4.2-25-g858a988d6e` und die unten dokumentierten Board-Optionen. Beim Build von 1.3.0 wurde versehentlich **Espressif 3.2.0** mit einem anderen SDK verwendet. Dieser unnötige Wechsel ist die vermutete Ursache des gemeldeten Kamera-Startfehlers; die Sensor-Pins waren unverändert. Am 5. Oktober 2026 wurde der erfolgreiche Betrieb nach dem Update über den PC bestätigt.
+**Stand der Prüfung:** Build und Softwaretests sind erfolgreich. Die bisherige Firmware 1.3.1 wurde am PC und am Android-Handy erfolgreich geflasht, laut Rückmeldung auch mit höherer Baudrate. Der erste OTA-Wechsel und der Rollback müssen noch an einer echten Kamera geprüft werden. Vor dem Einsatz an allen Kameras zuerst ein Gerät testen.
 
-**8-maliges Blinken**, `i2c.master: probe device timeout` und `Camera probe failed ... 0x105 (ESP_ERR_NOT_FOUND)` bedeuten: Der Kamerasensor wird beim Start nicht erkannt. Dieser Fehler tritt vor dem HTTPS-Upload auf und wird nicht durch ein SSL-Zertifikat verursacht.
+## Erste Installation der OTA-Funktion
 
-Bereits gekoppelte Geräte mit der **Update-BIN 1.3.1** oder im [Web-Flasher](https://vothmarkus.github.io/PrusaConnectCam-M5Stack-PoECam/) über **„Kamera auf 1.3.1 aktualisieren“** aktualisieren. Kein vollständiges Löschen und keine erneute Kopplung sind dafür erforderlich. Nach dem Flashen einmal stromlos machen und neu starten. Im Protokoll müssen `M5PoECAM Prusa Connect 1.3.1`, das oben genannte SDK und anschließend `Camera ready` erscheinen. Danach einen neuen Schnappschuss in Prusa Connect prüfen, bevor die übrigen Kameras aktualisiert werden.
+1. Kamera mit einem **externen ESP32 Downloader und passendem PoE-CAM-Adapter** verbinden. Ein USB-Kabel allein ist kein Programmer. Siehe [M5Stack-Anleitung](https://docs.m5stack.com/en/unit/Unit_PoE_CAM).
+2. Den [Web-Flasher](https://vothmarkus.github.io/PrusaConnectCam-M5Stack-PoECam/) direkt in Chrome/Edge am PC oder Chrome auf Android öffnen.
+3. **„Kamera auf 1.4.0 aktualisieren“** verwenden. Die gespeicherte Prusa-Kopplung bleibt erhalten.
+4. Kamera anschließend am PoE-Netz betreiben. Im seriellen Protokoll erscheinen `M5PoECAM Prusa Connect 1.4.0`, `Camera ready` und nach mindestens 30 Sekunden `OTA self-test passed`.
+5. Einen neuen Schnappschuss in Prusa Connect prüfen.
 
-## Reparatur der Prusa-Uploads
+Diese erste OTA-fähige Firmware muss einmal per USB auf jede Kamera. Danach erfolgen normale Firmware-Updates über Ethernet. Alte Versionen bis 1.3.1 können sich nicht selbst aktualisieren.
 
-Bei der Untersuchung am **3. Oktober 2026** antwortete der bisherige Upload-Endpunkt `webcam.connect.prusa3d.com/c/snapshot` mit einer HTTP-301-Weiterleitung. Deren Ziel ist die Webcam-Webanwendung; die aktuelle Upload-API liegt unter **`https://camera-service.prusa3d.com/c/snapshot`**. Der alte Code wertete den HTTP-Status nicht aus und konnte einen fehlgeschlagenen Upload als Erfolg anzeigen.
+**Vollständige Neuinstallation** im Flasher löscht den Flash einschließlich Kopplung. Sie ist für ein normales Update nicht erforderlich.
 
-Das bisher eingebettete **ISRG Root X1 ist nicht abgelaufen** (gültig bis Juni 2035). Für den neuen Dienst ergänzt 1.3.0 **GTS Root R1 und R4**. Die TLS-Zertifikatsprüfung bleibt aktiv. Weitere Änderungen:
+### Android / USB
 
-- HTTP-Statusauswertung, begrenzte Verbindungs-/Lesezeiten und direkte Übertragung des JPEG-Puffers.
-- Keine automatische Weitergabe von Token und Fingerprint an Weiterleitungsziele; keine Token im seriellen Protokoll.
-- Unterstützung bisheriger `?token=…`-Links und neuer `#t=v1.…`-QR-Codes.
-- Asynchroner NTP-Start, funktionierende LED-Fehlercodes und ein QR-Scan mit 30-Sekunden-Zeitlimit.
-- Abgesicherte Kamera-/QR-Speicherverwaltung sowie Prüfung gespeicherter Einstellungen.
+Auf Android **„Android USB (CH9102)“** auswählen. Der WebUSB-Zugang unterstützt den M5Stack-Downloader mit USB-ID **`1a86:55d4`**. Ältere CP2104-Downloader bitte am PC verwenden.
 
-**Ein Git-Update aktualisiert die Kameras nicht automatisch.** Jede Kamera muss per Programmer geflasht werden; diese Firmware enthält kein OTA-Update. Zuerst eine Kamera aktualisieren und ihren tatsächlichen Bild-Upload prüfen, anschließend die übrigen Geräte.
+- Seite direkt in Chrome über HTTPS öffnen, außerhalb eines eingebetteten App-Browsers.
+- USB-Host/OTG-Adapter und ein Datenkabel verwenden. Ein reiner Steckeradapter garantiert keine Host-Funktion.
+- **„Downloader erkennen“** auswählen und dem Gerät `USB-Enhanced-SERIAL CH9102` Zugriff erlauben. Dieser Test schreibt keine Firmware.
+- Auf Android werden zunächst 115200 Baud gewählt; 460800 kann bei stabiler Verbindung verwendet werden.
+- Eine Auswahl ausschließlich mit Bluetooth-Geräten deutet auf den nativen Serial-Modus oder eine alte Seitenversion hin. Ob `navigator.serial` vorhanden ist, sagt auf Android nichts über USB-Unterstützung aus ([Chromium](https://groups.google.com/a/chromium.org/g/blink-dev/c/HBJ-uYFvkpM/m/MrLnwZlsAAAJ)).
 
-## Fertige Firmware installieren
+## Automatische Updates
 
-Die PoE-CAM benötigt einen **externen ESP32 Downloader mit passendem PoE-CAM-Adapter**. Ein USB-Kabel allein ist kein Programmer. Anschluss und Download-Modus stehen in der [M5Stack-Anleitung](https://docs.m5stack.com/en/unit/Unit_PoE_CAM). Die Hardware hat 16 MB Flash; diese Firmware behält das bisherige **4-MB-Partitionslayout** bei.
+Jede Kamera prüft **einmal pro Nacht zwischen 03:00 und 04:00 Uhr, Europe/Berlin**, einschließlich Sommerzeit. Aus der Geräte-MAC wird eine feste Minute/Sekunde berechnet, sodass die Geräte zeitversetzt anfragen. Die Uhrzeit und der letzte Prüftag stehen im Startprotokoll und unter `ota status`.
 
-| Zweck | Datei | Flash-Adresse | Gespeicherte Kopplung |
-| --- | --- | --- | --- |
-| Vorhandene Installation dieses Projekts aktualisieren | [Update-BIN herunterladen](https://raw.githubusercontent.com/vothmarkus/PrusaConnectCam-M5Stack-PoECam/main/ESP32_PrusaConnectCam_web/build/m5stack.esp32.m5stack_poe_cam/ESP32_PrusaConnectCam_web.ino.bin) | `0x10000` | Bleibt erhalten, wenn kein vollständiges Löschen erfolgt |
-| Erstinstallation / vollständige Neuinstallation | [Merged-BIN herunterladen](https://raw.githubusercontent.com/vothmarkus/PrusaConnectCam-M5Stack-PoECam/main/ESP32_PrusaConnectCam_web/build/m5stack.esp32.m5stack_poe_cam/ESP32_PrusaConnectCam_web.ino.merged.bin) | `0x0` | Wird gelöscht; anschließend neu koppeln |
+Voraussetzungen sind eine Ethernet-IP und eine gültige NTP-Zeit. Ist die Kamera zur geplanten Uhrzeit offline, versucht sie es nach Wiederkehr noch innerhalb derselben Stunde. Nach 04:00 Uhr wartet sie bis zur nächsten Nacht. Ein begonnener nächtlicher Versuch wird gespeichert; ein Neustart löst keine Wiederholung am selben Tag aus. Bei Download-, DNS- oder TLS-Fehlern läuft die bisherige Firmware weiter; der nächste automatische Versuch erfolgt in der nächsten Nacht.
 
-**Für bereits gekoppelte Kameras die Update-BIN verwenden und „Erase all flash“ deaktiviert lassen.** Das Merged-Image enthält auch den leeren Einstellungsbereich und überschreibt vorhandene Token/Fingerprints. Die Update-Anleitung gilt für das bisherige Partitionslayout dieses Repositories, nicht für beliebige Fremdfirmware.
+Der Ablauf:
 
-Beispiel mit Python und esptool 4.8.1, aus dem Download-Ordner:
+1. `https://github.com/vothmarkus/PrusaConnectCam-M5Stack-PoECam/releases/latest/download/ota-manifest.json` abrufen. GitHubs `latest` verweist auf einen veröffentlichten regulären Release; Entwürfe und Vorabversionen werden nicht verwendet.
+2. Schema, Hardwareziel, Partitionslayout und eine **streng höhere Version** im Format `major.minor.patch` prüfen. Ein älterer Release führt niemals zu einem Downgrade.
+3. Nur die App-BIN des angegebenen Releases herunterladen. Die Dateigröße muss in den freien OTA-Platz passen. HTTPS-Zertifikate werden mit dem CA-Bündel des SDK geprüft; jeder Redirect muss auf einen zugelassenen HTTPS-Host führen. Kamera-Token und Fingerprint werden nicht an GitHub gesendet.
+4. In den inaktiven Firmware-Platz schreiben. **SHA-256 und ESP32-Image prüfen, bevor die Startauswahl geändert wird.** Das Merged-Image, die Partitionstabelle und der Einstellungsbereich werden bei OTA nicht geschrieben.
+5. Neu starten, lokalen Selbsttest durchführen und die Version bestätigen. Während Download/Neustart pausieren die Schnappschüsse.
 
-```bash
-python -m pip install esptool==4.8.1
-# /dev/ttyUSB0 durch den eigenen Port ersetzen, unter Windows z. B. COM5.
-python -m esptool --chip esp32 --port /dev/ttyUSB0 --baud 460800 write_flash 0x10000 ESP32_PrusaConnectCam_web.ino.bin
-```
+Ein Commit auf `main` installiert noch kein Update auf Kameras. **Das Veröffentlichen eines Releases ist die Freigabe.** Bis ein Release mit `ota-manifest.json` existiert, kann die Prüfung HTTP 404 melden; die Kamera arbeitet weiter. Der frühere Release `V1.2.0` enthält noch kein OTA-Manifest.
 
-Für die **Erstinstallation** stattdessen:
+### Startprüfung und Rückfall
 
-```bash
-python -m esptool --chip esp32 --port /dev/ttyUSB0 --baud 460800 write_flash 0x0 ESP32_PrusaConnectCam_web.ino.merged.bin
-```
+Eine neue OTA-Version wird erst nach PSRAM-Prüfung, erfolgreicher JPEG-Aufnahme, erfolgreichem Start des Ethernet-Treibers und mindestens 30 Sekunden Laufzeit bestätigt. Der Starttest ist bewusst unabhängig von NTP, Prusa Connect und Internet-Erreichbarkeit. Er prüft nicht jede mögliche Funktionsstörung nach dem Start; die tatsächlichen Prusa-Schnappschüsse gehören deshalb zum Gerätetest.
 
-Danach die Kamera neu starten. Bei Verbindungsproblemen zum Programmer mit `--baud 115200` wiederholen. [Prüfsummen und Build-Metadaten](ESP32_PrusaConnectCam_web/build/m5stack.esp32.m5stack_poe_cam/) liegen bei den BIN-Dateien. Der alte Verzeichnisname bleibt für bestehende Download-Links erhalten.
+Scheitert der Test, kehrt die Kamera zur vorherigen Firmware zurück. Bei einem unbestätigten Neustart greift der Bootloader-Rollback. Für einen hängen gebliebenen Start ist zusätzlich ein Neustart nach 120 Sekunden vorgesehen. Eine zurückgewiesene Version wird gespeichert und anschließend übersprungen; für eine korrigierte Firmware eine neue Versionsnummer verwenden.
 
-### Web-Flasher
+Der erste USB-Start bestätigt seinen eigenen Firmware-Platz als Rückfallziel für spätere OTA-Updates. USB-Reparaturen und eine unterbrochene Erstinstallation haben nicht denselben Schutz wie das Schreiben in den inaktiven OTA-Platz. Bei Bedarf bleibt der Programmer als Wiederherstellungsweg verfügbar.
 
-Unter [`docs/index.html`](docs/index.html) liegt ein browserbasierter Flasher auf Basis von **Espressif esptool-js 0.7.0**. Er trennt die beiden Anwendungsfälle bewusst:
+### Sofort prüfen / OTA ausschalten
 
-- **Bestehende Kamera aktualisieren:** schreibt ausschließlich die App-BIN nach `0x10000` mit `eraseAll: false`. Der Einstellungsbereich wird nicht vollständig gelöscht.
-- **Vollständige Neuinstallation:** löscht den Flash und schreibt das Merged-Image nach `0x0`. Token/Fingerprint und Kopplung gehen verloren.
-- Vor dem Flashen werden Dateigröße und **SHA-256** gegen die zu Firmware 1.3.1 gehörenden Build-Metadaten geprüft.
-- Standardbaudrate ist 460800; bei Verbindungsproblemen kann direkt auf 115200 umgestellt werden.
+Seriellen Monitor auf **115200 Baud** stellen und den Befehl mit **Zeilenumbruch** senden:
 
-Für den Web-Flasher wird weiterhin der externe ESP32-Downloader/PoE-CAM-Adapter benötigt. Die Seite muss über **HTTPS** ausgeliefert werden, beispielsweise über GitHub Pages; lokal per `file://` steht Web Serial nicht zuverlässig zur Verfügung.
+| Befehl | Wirkung |
+| --- | --- |
+| `ota status` | Firmwareversion, aktiv/inaktiv, nächtliche Uhrzeit, letzter Prüftag, zurückgewiesene Version |
+| `ota check` | Einmalige Prüfung anfordern; wartet nötigenfalls auf Selbsttest, Ethernet und NTP |
+| `ota off` | Nächtliche Updates dauerhaft deaktivieren |
+| `ota on` | Nächtliche Updates wieder aktivieren |
 
-**Android:** Die bisherige Prüfung auf `navigator.serial` war unzureichend: Die API kann auf Android nur Bluetooth-Geräte anbieten. Native Unterstützung kabelgebundener serieller Geräte hängt zusätzlich von Android-Version und Gerätehersteller ab; Chrome 148 allein genügt nicht. Siehe die [Chromium-Ankündigung zu den Systemvoraussetzungen](https://groups.google.com/a/chromium.org/g/blink-dev/c/HBJ-uYFvkpM/m/MrLnwZlsAAAJ).
+`ota check` ist auch bei deaktivierten automatischen Updates möglich. Ein Neustart setzt `ota off` nicht zurück. Diese Befehle werden an die laufende Firmware gesendet, nicht im Download-Modus des ESP32. Der Web-Flasher enthält keinen seriellen Monitor.
 
-Der Flasher wählt auf Android jetzt **„Android USB (CH9102)“** und greift über WebUSB auf den M5Stack-Downloader mit USB-ID **`1a86:55d4`** zu. Dieser Chip unterstützt CDC-ACM. Esptool-js und die Firmware bleiben dabei unverändert. Ältere M5Stack-Downloader mit **CP2104** werden von diesem USB-Zugang nicht unterstützt; sie können weiter am PC verwendet werden.
+### Release erstellen und testen
 
-1. Die Seite **direkt in Chrome** öffnen, über HTTPS und außerhalb eines eingebetteten App-Browsers.
-2. Handy über einen **USB-C-OTG-/Host-Adapter mit USB-A-Buchse** und ein USB-A-auf-USB-C-**Datenkabel** mit dem Downloader verbinden. Ein Steckeradapter allein garantiert keine Host-Funktion. Ein direktes C-auf-C-Kabel funktioniert nur bei passender USB-C-Beschaltung des Downloaders.
-3. Verbindung **„Android USB (CH9102)“**, zunächst **115200 Baud**. Diese Optionen werden auf Android vorausgewählt.
-4. **„Downloader erkennen“** drücken und `USB-Enhanced-SERIAL CH9102` (oder den entsprechenden USB-Gerätenamen) auswählen. Chrome den USB-Zugriff erlauben. Der Test erkennt den ESP32 und startet ihn wieder; Firmware und Kopplung werden nicht überschrieben.
-5. Erst danach bei Bedarf **„Kamera auf 1.3.1 aktualisieren“** verwenden.
+1. `SW_VERSION` in `mcu_cfg.h` erhöhen und `./tools/build.sh` ausführen. Immer alle erzeugten BIN-Dateien und Metadaten gemeinsam mit den Quellen committen.
+2. Der Workflow **„Validate firmware and prepare release“** prüft Quellenstand, Tests, Images, Prüfsummen und USB-Flasher. Bei Erfolg legt er einen **Release-Entwurf `v<Version>`** mit den fertigen Dateien an bzw. aktualisiert einen bestehenden Entwurf. Bereits veröffentlichte Firmware-Dateien werden nicht ersetzt.
+3. Neue Firmware zunächst per USB an einer Kamera prüfen. Für den ersten echten OTA-Wechsel eine Kamera auf einer kleineren OTA-fähigen Version belassen, beispielsweise 1.4.0, und einen höheren Release vorbereiten.
+4. Nach dem USB-Test den Entwurf tagsüber als normalen Release veröffentlichen und gegebenenfalls als **Latest** markieren. Mit `ota check` an der Testkamera den echten Download, Neustart und die Prusa-Bilder prüfen, bevor das nächste nächtliche Zeitfenster beginnt. Automatische Updates an übrigen bereits OTA-fähigen Kameras bei Bedarf vorher mit `ota off` deaktivieren.
+5. Für den vollständigen Gerätetest auch den Wechsel zurück in den anderen OTA-Platz, einen unterbrochenen Download und einen gezielt fehlgeschlagenen Starttest an der Testkamera prüfen. Diesen fehlerhaften Test-Build nicht als regulären Release für die Flotte veröffentlichen.
 
-Erscheint weiterhin nur eine Bluetooth-Liste, ist noch der native Modus oder eine alte Seitenversion aktiv. Bleibt auch die USB-Liste leer, OTG-/Host-Modus, Datenkabel und Stromversorgung prüfen und andere USB-Apps schließen. Die Google-CDC-ACM-Bibliothek liegt mit Versionsbindung und Lizenz unter `docs/vendor/`. Softwaretests prüfen den neuen Zugang; ein physischer Android-Flash-Test steht noch aus.
+Für einen Startfehler-Test kann das passende Test-Image mit Espressifs `otatool.py` in den inaktiven Platz geschrieben und dieser als nächster Start ausgewählt werden. Das erfordert Zugriff auf den Programmer und einen vorher dokumentierten funktionierenden Rückfallplatz. Einen Fehler nicht absichtlich an den produktiven Schulkameras auslösen.
+
+## USB-Reparatur und Dateien
+
+Die Hardware besitzt 16 MB Flash; das Projekt verwendet weiterhin das kompatible **4-MB-Layout**. Darin liegen `app0` und `app1` mit jeweils **1.280 KiB**. Die App 1.4.0 benötigt rund 983 KiB.
+
+Alle [Firmware-Dateien, Prüfsummen und Metadaten](ESP32_PrusaConnectCam_web/build/m5stack.esp32.m5stack_poe_cam/) liegen unter dem bisherigen Download-Pfad.
+
+| Datei | Adresse / Verwendung |
+| --- | --- |
+| `ESP32_PrusaConnectCam_web.ino.bin` | App für OTA; bei USB nach `0x10000` |
+| `ESP32_PrusaConnectCam_web.ino.bootloader.bin` | Originaler M5Stack-Bootloader nach `0x1000` |
+| `ota-reset.bin` | 8 KiB `0xFF` nach `0xe000`, **erst nach erfolgreichem Schreiben der App und des Bootloaders** |
+| `ESP32_PrusaConnectCam_web.ino.partitions.bin` | Bestehende Partitionstabelle bei `0x8000`; bei normalem Update unverändert |
+| `ESP32_PrusaConnectCam_web.ino.merged.bin` | Vollständige Erstinstallation nach `0x0`; löscht Kopplung |
+| `ota-manifest.json` | Version, Zielgerät, Layout, Größe, SHA-256 und Release-URL der App |
+
+**Der Web-Flasher erledigt die USB-Schritte in der richtigen Reihenfolge.** Er prüft vorher alle Downloads, schreibt App und den originalen Bootloader mit `eraseAll: false` und setzt zuletzt nur die beiden OTA-Metadatensektoren zurück. Der Kopplungsbereich `0x9000–0xdfff` wird nicht berührt.
+
+Nur eine App nach `0x10000` zu schreiben genügt nach einem OTA-Wechsel möglicherweise nicht: Der Bootloader könnte weiterhin `app1` starten. Deshalb gehört das abschließende Schreiben von `ota-reset.bin` zur USB-Reparatur. Niemals diesen Schritt ausführen, wenn das Schreiben der neuen App fehlgeschlagen ist. Die Anleitung gilt für das Partitionslayout dieses Projekts, nicht für beliebige Fremdfirmware.
 
 ## Koppeln und bedienen
 
-1. In Prusa Connect den Drucker öffnen und eine externe Kamera hinzufügen. Den dort angebotenen Kopplungs-QR-Code anzeigen.
-2. Die Seitentaste der PoE-CAM **kurz drücken und loslassen**. Die blaue LED blinkt schnell, der Scan läuft maximal 30 Sekunden.
-3. Den QR-Code gut beleuchtet und vollständig ins Bild halten. Bei Erfolg speichert die Kamera ihren Token und wechselt zurück zu JPEG-Aufnahmen.
-4. Nach Netzwerkverbindung und Zeitsynchronisation den neuen Schnappschuss in Prusa Connect prüfen.
+1. In Prusa Connect beim Drucker eine externe Kamera hinzufügen und den Kopplungs-QR-Code anzeigen.
+2. Seitentaste der PoE-CAM kurz drücken und loslassen. Die LED blinkt schnell; der Scan läuft maximal 30 Sekunden.
+3. QR-Code gut beleuchtet und vollständig ins Bild halten. Bei Erfolg wird der Token gespeichert; anschließend einen neuen Schnappschuss prüfen.
 
-Ein weiterer kurzer Tastendruck bricht den Scan ab. Bei Abbruch, ungültigem QR-Code oder Zeitüberschreitung bleibt eine vorhandene Kopplung erhalten. Unterstützt werden auch QR-Codes mit dem reinen 20-stelligen alphanumerischen Kamera-Token. Die öffentliche `v1`-Verschleierung neuer Prusa-Links ist kein Verschlüsselungsverfahren und kann sich serverseitig ändern.
+Ein weiterer kurzer Tastendruck bricht den Scan ab und erhält die bisherige Kopplung. Unterstützt werden reine 20-stellige alphanumerische Token, alte `?token=…`-Links und neue `#t=v1.…`-QR-Codes.
 
-**Taste 5 Sekunden halten:** horizontale Spiegelung umschalten, speichern und neu starten. Das ist **kein Werksreset**; die Kopplung bleibt erhalten. Jede Kamera benötigt ihren eigenen Kopplungs-Token. Einen vollständigen Flash-Abzug einer gekoppelten Kamera nicht auf andere Geräte kopieren.
+**Taste 5 Sekunden halten:** horizontale Spiegelung ändern, speichern, neu starten. Das ist kein Werksreset. Jede Kamera benötigt ihren eigenen Token; keinen vollständigen Flash-Abzug einer gekoppelten Kamera auf andere Geräte kopieren.
 
 ## LED und Fehlersuche
 
-Serieller Monitor: **115200 Baud**. Die blaue LED signalisiert den Zustand; diese Kamera hat kein Display.
-
 | Wiederholtes Blinken | Zustand |
 | --- | --- |
-| 1 Sekunde an / 1 Sekunde aus | Ethernet hat noch keine IP-Adresse |
-| 0,25 Sekunden an / aus | NTP-Zeit fehlt; HTTPS wartet auf eine gültige Uhrzeit |
-| 2 Sekunden an / aus | Kein gültiger Kamera-Token gespeichert |
-| Schnell während des Scans | QR-Erkennung aktiv |
+| 1 Sekunde an / aus | Ethernet ohne IP |
+| 0,25 Sekunden an / aus | NTP-Zeit fehlt |
+| 2 Sekunden an / aus | Kein gültiger Kopplungs-Token |
+| Schnell während des Scans | QR-Erkennung |
 | Sehr schnell bei gehaltener Taste | Nach 5 Sekunden Spiegelung und Neustart |
 
-| Einzelne Blinkfolge nach einem Versuch | Bedeutung |
+| Einzelne Blinkfolge | Ergebnis |
 | --- | --- |
-| 1 × | Upload erfolgreich (HTTP 2xx); auch Bestätigung eines gespeicherten QR-Tokens |
-| 2 × | DNS-, TCP-, TLS- oder Übertragungsfehler; serielles Protokoll prüfen |
-| 3 × | HTTP 401: nicht autorisiert |
-| 4 × | HTTP 403: Kamera-Zugriff verweigert; Token/Fingerprint/Kopplung prüfen |
-| 5 × | Ungültiger Token beim Upload-Aufruf |
-| 6 × | Fehlender oder ungültiger Fingerprint |
-| 7 × | Anderer HTTP-Fehler, z. B. 301, 404, 429 oder 5xx; Status im Protokoll |
+| 1 × | Upload erfolgreich (HTTP 2xx), auch Bestätigung einer QR-Kopplung |
+| 2 × | DNS-, TCP-, TLS- oder Übertragungsfehler |
+| 3 × / 4 × | HTTP 401 / 403: Kopplung prüfen |
+| 5 × / 6 × | Ungültiger Token / Fingerprint |
+| 7 × | Anderer HTTP-Fehler, z. B. 301, 404, 429 oder 5xx |
 | 8 × | Kamera-Initialisierung oder Aufnahme fehlgeschlagen |
 
-Im Schulnetz müssen DHCP/DNS, **NTP über UDP 123** zu `pool.ntp.org` oder `time.nist.gov` und **HTTPS über TCP 443** zu `camera-service.prusa3d.com` funktionieren. Captive Portals und authentifizierte Proxys unterstützt die Firmware nicht. Bei einer TLS-Prüfung durch die Schul-Firewall ist deren Zertifikat nicht automatisch vertrauenswürdig; die Netzwerkadministration sollte die Verbindung entsprechend freigeben.
+Das Schulnetz muss DHCP/DNS, NTP über **UDP 123** zu `pool.ntp.org` oder `time.nist.gov` sowie HTTPS über **TCP 443** zu `camera-service.prusa3d.com` erlauben. OTA benötigt zusätzlich `github.com`, `release-assets.githubusercontent.com` und gegebenenfalls `objects.githubusercontent.com`. Captive Portals und authentifizierte Proxys werden nicht unterstützt. Ein TLS-Proxy mit eigener CA benötigt eine passende Netzfreigabe bzw. eine bewusst angepasste Vertrauenskette; Zertifikatsprüfung nicht abschalten.
 
-Bei 401/403 zuerst prüfen, ob die Kamera in Prusa Connect noch existiert und zum richtigen Drucker gehört. Falls nötig einen neuen Kopplungs-QR-Code verwenden. Bei `Still waiting for NTP` die Zeitserver-Erreichbarkeit prüfen. Bei HTTP 301/404 den konfigurierten API-Host prüfen. TLS-Probleme durch Aktualisieren der passenden CA-Zertifikate lösen, nicht durch Abschalten der Prüfung.
+**Prusa-Ausfall im Oktober 2026:** Der alte Upload-Endpunkt `webcam.connect.prusa3d.com/c/snapshot` lieferte eine 301-Weiterleitung. Verwendet wird jetzt `https://camera-service.prusa3d.com/c/snapshot`. Uploads prüfen HTTP-Status, begrenzen Wartezeiten und folgen keinen Weiterleitungen mit Kamera-Zugangsdaten. Zum bisherigen ISRG Root X1 wurden GTS Root R1/R4 ergänzt; ISRG Root X1 war nicht abgelaufen.
 
-## Selbst kompilieren und testen
+**Kamera-Startfehler in 1.3.0:** Ein versehentlicher Wechsel von M5Stack 3.2.2 auf Espressif 3.2.0 führte zu einem anderen SDK. 1.3.1 stellte das ursprüngliche Paket wieder her; danach wurde der Betrieb bestätigt. Achtmaliges Blinken und `Camera probe failed ... 0x105` betreffen den Sensor und treten vor HTTPS auf. 1.4.0 verwendet weiterhin den wiederhergestellten Stand mit ESP-IDF `v5.4.2-25-g858a988d6e`.
 
-Referenz-Build: **Arduino CLI 1.3.1**, **M5Stack 3.2.2** (Arduino-Core 3.2.1, ESP-IDF `v5.4.2-25-g858a988d6e`), Board `M5PoECAM` (`m5stack:esp32:m5stack_poe_cam`). Es werden nur Bibliotheken aus diesem Core sowie das mitgelieferte `quirc` benötigt; `ArduinoUniqueID` ist nicht mehr erforderlich. PlatformIO-Konfigurationen sind nicht enthalten.
+## Selbst bauen und Softwaretests
+
+Referenz: **Arduino CLI 1.3.1**, **M5Stack 3.2.2**, Arduino-Core 3.2.1, ESP-IDF `v5.4.2-25-g858a988d6e`. Keine zusätzlichen Arduino-Bibliotheken erforderlich; JSON, HTTPS/CA-Bündel und OTA stammen aus dem SDK, `quirc` liegt im Projekt.
 
 ```bash
 git clone https://github.com/vothmarkus/PrusaConnectCam-M5Stack-PoECam.git
@@ -126,29 +143,28 @@ arduino-cli core install m5stack:esp32@3.2.2 --additional-urls https://static-cd
 ./tools/build.sh
 ```
 
-Das Build-Skript benötigt Bash/Python 3 und setzt PSRAM **enabled**, Partition **default**, Flash **4 MB / QIO / 80 MHz**, CPU **240 MHz**, Loop/Event-Core **1**, Debug **none**, vollständiges Löschen **aus**. In der Arduino IDE dieselben Optionen wählen und `ESP32_PrusaConnectCam_web/ESP32_PrusaConnectCam_web.ino` öffnen. Das Skript erzeugt BIN-Dateien, `manifest.json` und `SHA256SUMS` im bestehenden Build-Verzeichnis. Große ELF/MAP-Zwischendateien bleiben unter `.build/`. Der Export aktualisiert auch Version, Dateigrößen und Prüfsummen des Web-Flashers.
+Das Skript setzt PSRAM **enabled**, Partition **default**, Flash **4 MB / QIO / 80 MHz**, CPU **240 MHz**, Loop/Event-Core **1**, Debug **none**, vollständiges Löschen **aus**. Es prüft SDK, Original-Bootloader, Partitionshash, App-Größe und den tatsächlich verlinkten Arduino-Rollback-Hook. Danach erzeugt es alle Images und Metadaten und aktualisiert den Web-Flasher. ELF/MAP bleiben unter `.build/`.
 
-Das M5Stack-Paket 3.2.2 meldet intern Arduino-Core 3.2.1; das ist erwartbar. Es erzeugt Warnungen über mehrfach definierte Pin-Makros in seinen eigenen Headern. Diese stammen aus dem unveränderten Herstellerpaket. Nicht auf ein anderes Board-Paket wechseln, um diese Warnungen zu entfernen.
+Das Herstellerpaket meldet intern Arduino-Core 3.2.1 und verursacht Warnungen über mehrfach definierte Pin-Makros. Dafür das Boardpaket nicht wechseln.
 
-Die Tests benötigen Linux, GCC/G++ und Bash:
+Linux-Testvoraussetzungen: GCC/G++, Bash, OpenSSL-Entwicklungsdateien (`libssl-dev`), Python 3 und Node.js ≥22.
 
 ```bash
 ./tests/run.sh
+node --test tests/web_flasher_test.mjs
+python3 tools/check_release.py
 ```
 
-Geprüft werden HTTP-Statusauswertung, beide QR-Link-Formate, fehlerhafte Eingaben, EEPROM-Grenzen, tatsächliche QR-Erkennung einschließlich Spiegelung und simulierte Speicherfehler mit AddressSanitizer/UndefinedBehaviorSanitizer. In Umgebungen ohne LeakSanitizer-Unterstützung: `ASAN_OPTIONS=detect_leaks=0 ./tests/run.sh`; die QR-Tests zählen zusätzlich offene Speicherallokationen.
+Die Tests prüfen HTTP/QR/EEPROM, echte QR-Erkennung und Speicherfehler, OTA-Versionsvergleich, Nachtzeitfenster, Redirect-Ziele, den tatsächlich verwendeten Streaming-Code einschließlich SHA-256, Abbrüchen und Schreibfehlern sowie Android-USB und die Reihenfolge der USB-Wiederherstellung. AddressSanitizer/UndefinedBehaviorSanitizer sind aktiv. Falls LeakSanitizer in der Umgebung nicht unterstützt wird: `ASAN_OPTIONS=detect_leaks=0 ./tests/run.sh`.
 
-Web-Flasher-Tests (Node.js 22 oder neuer): `node --test tests/web_flasher_test.mjs`. Sie prüfen Android mit gleichzeitig vorhandener Bluetooth-Serial-API, CDC-Steuerbefehle, Baudwechsel ohne USB-Neustart, Geräteauswahl vor dem Download sowie Abbruch bei falscher Prüfsumme/falschem Chip und den Erhalt des Update-Offsets.
+Die Prüfungen simulieren keine komplette ESP32-Hardware. Kaltstart, reale OTA-Übertragung, beide OTA-Plätze, Rollback, Prusa-Uploads und erhaltene Kopplung gehören zusätzlich zum Gerätetest.
 
-**Validierungsgrenze:** Kompilierung und Softwaretests ersetzen keinen Test am Gerät mit gültiger Prusa-Kopplung. Die Hardwareprüfung umfasst Kaltstart, aktualisierte Bilder, Netzwerkausfall/-wiederkehr, QR-Kopplung und erhaltene Einstellungen nach Neustart.
+## Quellen und Lizenz
 
-## Umfang und Quellen
+- [Prusa Camera API](https://connect.prusa3d.com/docs/cameras/)
+- [ESP-IDF 5.4.2: OTA und Rollback](https://docs.espressif.com/projects/esp-idf/en/v5.4.2/esp32/api-reference/system/ota.html)
+- [GitHub Releases](https://docs.github.com/en/rest/releases/releases)
+- [M5Stack Unit PoE CAM](https://docs.m5stack.com/en/unit/Unit_PoE_CAM)
+- [Google Trust Services](https://pki.goog/repository/) / [ISRG-Zertifikate](https://letsencrypt.org/certificates/)
 
-Diese Firmware bietet Snapshots über Ethernet. Ein lokales Webinterface, RTSP, MQTT und OTA sind nicht implementiert; der historische Sketchname mit `_web` bedeutet kein Webinterface.
-
-- [Prusa Camera API](https://connect.prusa3d.com/docs/cameras/) und [Token/Fingerprint-Kommunikation](https://connect.prusa3d.com/docs/cameras/camera_communication/)
-- [Öffentliche Prusa-Webcam-Anwendung](https://camera-service-webcam.prusa3d.com/) – API-Konfiguration und QR-Link-Format, Stand 03.10.2026
-- [Google Trust Services Root-Zertifikate](https://pki.goog/repository/) und [ISRG-Zertifikate](https://letsencrypt.org/certificates/)
-- [M5Stack Unit PoE CAM](https://docs.m5stack.com/en/unit/Unit_PoE_CAM) und [Arduino-Anleitung](https://docs.m5stack.com/en/arduino/m5poe_cam/program)
-
-Projekt: Markus Voth. Projektlizenz: MIT. Die mitgelieferten `quirc`- und OpenMV-Dateien tragen eigene Lizenz- und Copyright-Hinweise in ihren Quelltexten; diese bleiben erhalten.
+Projekt: Markus Voth, MIT-Lizenz. `quirc`, OpenMV-Dateien und die unverändert eingebundene Google-Web-Serial-Bibliothek behalten ihre eigenen Lizenzhinweise. Die Firmware bietet Ethernet-Snapshots und OTA; ein lokales Webinterface, RTSP und MQTT sind nicht implementiert.

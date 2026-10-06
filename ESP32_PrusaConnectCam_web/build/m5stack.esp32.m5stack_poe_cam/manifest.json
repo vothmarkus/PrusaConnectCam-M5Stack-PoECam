@@ -1,5 +1,6 @@
 {
-  "firmware_version": "1.3.1",
+  "firmware_version": "1.4.0",
+  "source_sha256": "557f193b0292a3c00edd7d70040cf5da94835276ffc1af178da77e13a313aa8a",
   "arduino_cli": "arduino-cli  Version: 1.3.1 Commit: 08ff7e2b Date: 2025-08-28T13:51:45Z",
   "core": "m5stack:esp32@3.2.2",
   "board": "m5stack:esp32:m5stack_poe_cam",
@@ -14,11 +15,18 @@
     "flash_layout_mb": 4,
     "cpu_mhz": 240
   },
+  "ota": {
+    "target": "m5stack-poe-cam-u121",
+    "layout": "default-4m-ota-1280k-v1",
+    "slot_bytes": 1310720,
+    "bootloader_rollback": true,
+    "boot_test_override": true
+  },
   "images": {
     "ESP32_PrusaConnectCam_web.ino.bin": {
       "offset": "0x10000",
-      "bytes": 874208,
-      "sha256": "3882e51508f081f8ab24eb3272cc24f73307422af91abf8b0924762cb20aba94"
+      "bytes": 1006208,
+      "sha256": "c6307fdc62970734856116fd93a4572e027527fb7f0d6fb39281a31519d59944"
     },
     "ESP32_PrusaConnectCam_web.ino.bootloader.bin": {
       "offset": "0x1000",
@@ -33,7 +41,12 @@
     "ESP32_PrusaConnectCam_web.ino.merged.bin": {
       "offset": "0x0",
       "bytes": 4194304,
-      "sha256": "20e8dd41367fa6d2f90101b6a495a2f9db3f03135c76865b3c19ee381d095855"
+      "sha256": "8485b33bbf4b620370ed9a076e8f87d7c73593636d62242cd7d73f54acbdbb4e"
+    },
+    "ota-reset.bin": {
+      "offset": "0xe000",
+      "bytes": 8192,
+      "sha256": "7d2c7ac4888bfd75cd5f56e8d61f69595121183afc81556c876732fd3782c62f"
     }
   }
 }
