@@ -1,10 +1,10 @@
 {
   "schema": 1,
-  "version": "1.4.0",
+  "version": "1.4.1",
   "target": "m5stack-poe-cam-u121",
   "layout": "default-4m-ota-1280k-v1",
   "file": "ESP32_PrusaConnectCam_web.ino.bin",
   "size": 1006208,
-  "sha256": "c6307fdc62970734856116fd93a4572e027527fb7f0d6fb39281a31519d59944",
-  "url": "https://github.com/vothmarkus/PrusaConnectCam-M5Stack-PoECam/releases/download/v1.4.0/ESP32_PrusaConnectCam_web.ino.bin"
+  "sha256": "d9b50a8bd9d957a3b421959dd2767b549807bcbf4d31f327699f6edb673f6fa3",
+  "url": "https://github.com/vothmarkus/PrusaConnectCam-M5Stack-PoECam/releases/download/v1.4.1/ESP32_PrusaConnectCam_web.ino.bin"
 }

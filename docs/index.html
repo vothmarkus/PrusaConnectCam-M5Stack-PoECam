@@ -25,7 +25,7 @@
     .row { display:flex; gap:12px; flex-wrap:wrap; align-items:center; }
     label { display:flex; gap:8px; align-items:center; }
     progress { width:100%; height:18px; margin-top:14px; }
-    #status { white-space:pre-wrap; background:#0b1020; border-radius:10px; padding:12px; min-height:56px; overflow:auto; }
+    #status { white-space:pre-wrap; overflow-wrap:anywhere; background:#0b1020; border-radius:10px; padding:12px; box-sizing:border-box; height:clamp(220px,40vh,380px); overflow:auto; }
     code { background:#0b1020; padding:.15em .35em; border-radius:5px; }
     a { color:#93c5fd; }
     .warning { color:#fecaca; }
@@ -36,7 +36,7 @@
 <body>
 <main>
   <h1>PrusaConnectCam Web-Flasher</h1>
-  <p class="muted">M5Stack Unit PoE CAM · Firmware <span data-firmware-version>1.4.0</span> · ESP32</p>
+  <p class="muted">M5Stack Unit PoE CAM · Firmware <span data-firmware-version>1.4.1</span> · ESP32</p>
 
   <div class="card">
     <h2>Vorbereitung</h2>
@@ -52,7 +52,7 @@
           <option value="usb">Android USB (CH9102)</option>
         </select>
       </label>
-      <label>Baudrate
+      <label>Flash-Baudrate
         <select id="baud">
           <option value="460800" selected>460800</option>
           <option value="115200">115200</option>
@@ -68,20 +68,33 @@
     <h2>Bestehende Kamera aktualisieren</h2>
     <p>Installiert Firmware und den passenden Bootloader. Aktiviert anschließend die per USB geschriebene Firmware, auch nach vorherigen OTA-Updates. <strong>Die gespeicherte Kopplung bleibt erhalten.</strong></p>
     <p>Ab Version 1.4.0 prüft die Kamera jede Nacht zwischen 03:00 und 04:00 Uhr auf neuere GitHub-Releases und installiert passende Updates über Ethernet.</p>
-    <button id="update" class="update">Kamera auf <span data-firmware-version>1.4.0</span> aktualisieren</button>
+    <button id="update" class="update">Kamera auf <span data-firmware-version>1.4.1</span> aktualisieren</button>
   </div>
 
   <div class="card danger">
     <h2>Vollständige Neuinstallation</h2>
     <p class="warning"><strong>Achtung:</strong> Löscht den gesamten Flash und schreibt das 4-MB-Merged-Image nach <code>0x0</code>. Token/Fingerprint und Kopplung gehen verloren.</p>
     <label><input id="confirmErase" type="checkbox"> Ich verstehe, dass die gespeicherte Kopplung gelöscht wird.</label>
-    <p><button id="install" class="install" disabled>Flash löschen und <span data-firmware-version>1.4.0</span> neu installieren</button></p>
+    <p><button id="install" class="install" disabled>Flash löschen und <span data-firmware-version>1.4.1</span> neu installieren</button></p>
   </div>
 
   <div class="card">
-    <h2>Status</h2>
+    <h2>Serielle Konsole und Status</h2>
+    <p>Live-Protokoll lesen, ohne ein Update zu installieren. Die Konsole verwendet immer 115200 Baud und fragt beim Verbinden die laufende Firmwareversion und den OTA-Status ab.</p>
+    <div class="row">
+      <button id="monitorConnect" class="secondary">Konsole verbinden</button>
+      <button id="monitorDisconnect" class="secondary" disabled>Trennen</button>
+      <button id="monitorStatus" class="secondary" disabled>Version / OTA-Status</button>
+    </div>
+    <p id="serialState" class="muted" role="status">Nicht verbunden</p>
+    <p id="deviceVersion" class="info">Firmware auf der Kamera: noch nicht ausgelesen</p>
+    <div class="row">
+      <label><input id="autoScroll" type="checkbox" checked> Automatisch nach unten scrollen</label>
+      <button id="clearConsole" class="secondary">Konsole leeren</button>
+    </div>
     <progress id="progress" value="0" max="100"></progress>
-    <pre id="status">Bereit.</pre>
+    <pre id="status" tabindex="0" aria-label="Geräteprotokoll und Flash-Status">Bereit.</pre>
+    <p class="muted">Für den OTA-Nachttest die Kamera auf 1.4.0 belassen. Nach der Nachtprüfung zeigt „Version / OTA-Status“, ob 1.4.1 installiert wurde. Vor dem Flashen die Konsole mit „Trennen“ schließen. Angezeigt werden die letzten 100.000 Zeichen; die Seite zum Mitlesen geöffnet lassen.</p>
   </div>
 
   <p class="muted">Die Firmwaredateien werden vor dem Flashen per SHA-256 geprüft. Diese Seite sendet keine Zugangsdaten oder Kamera-Token.</p>
@@ -90,6 +103,7 @@
 <script type="module">
   import { ESPLoader, Transport } from "https://unpkg.com/esptool-js@0.7.0/bundle.js";
   import { defaultConnection, requestProgrammerPort } from "./serial-port.mjs";
+  import { SerialMonitor } from "./serial-monitor.mjs";
 
   const BASE = "https://raw.githubusercontent.com/vothmarkus/PrusaConnectCam-M5Stack-PoECam/main/ESP32_PrusaConnectCam_web/build/m5stack.esp32.m5stack_poe_cam/";
   const FW = {
@@ -97,14 +111,14 @@
       "file": "ESP32_PrusaConnectCam_web.ino.bin",
       "address": 65536,
       "bytes": 1006208,
-      "sha256": "c6307fdc62970734856116fd93a4572e027527fb7f0d6fb39281a31519d59944",
+      "sha256": "d9b50a8bd9d957a3b421959dd2767b549807bcbf4d31f327699f6edb673f6fa3",
       "eraseAll": false
     },
     "install": {
       "file": "ESP32_PrusaConnectCam_web.ino.merged.bin",
       "address": 0,
       "bytes": 4194304,
-      "sha256": "8485b33bbf4b620370ed9a076e8f87d7c73593636d62242cd7d73f54acbdbb4e",
+      "sha256": "d950ef5ea13de4eff3bc1692e25086d111c54db03bf7aefe6b6ac91f13f1fc29",
       "eraseAll": true
     },
     "bootloader": {
@@ -129,6 +143,8 @@
   let transport = null;
   let loader = null;
   let busy = false;
+  let monitor = null;
+  let versionTail = "";
 
   function showPlatformSupport() {
     const info = $("platformInfo");
@@ -145,10 +161,11 @@
     }
   }
 
-  function log(message) {
-    status.textContent += "\n" + message;
-    status.scrollTop = status.scrollHeight;
+  function appendLog(text) {
+    status.textContent = (status.textContent + text).slice(-100000);
+    if ($("autoScroll").checked) status.scrollTop = status.scrollHeight;
   }
+  function log(message) { appendLog("\n" + message); }
   function setStatus(message) { status.textContent = message; }
   function setBusy(value) {
     busy = value;
@@ -158,6 +175,58 @@
     $("connection").disabled = value;
     $("probe").disabled = value;
     $("confirmErase").disabled = value;
+    $("monitorConnect").disabled = value;
+    $("monitorDisconnect").disabled = !monitor?.running;
+    $("monitorStatus").disabled = !monitor?.running;
+  }
+
+  function serialText(text) {
+    appendLog(text.replace(/\r/g, ""));
+    const combined = versionTail + text;
+    const matches = [...combined.matchAll(/(?:M5PoECAM Prusa Connect |firmware )(\d+\.\d+\.\d+)(?=\s|\||$)/g)];
+    if (matches.length) $("deviceVersion").textContent = "Zuletzt gelesene Firmware auf der Kamera: " + matches.at(-1)[1];
+    versionTail = combined.slice(-512);
+  }
+  async function readDeviceStatus() {
+    if (!monitor?.running) return;
+    try { await monitor.requestStatus(); }
+    catch (error) { log("Statusabfrage fehlgeschlagen: " + (error?.message || String(error))); }
+  }
+  async function connectMonitor() {
+    if (busy) return;
+    setBusy(true);
+    $("serialState").textContent = "Verbindung wird geöffnet …";
+    $("deviceVersion").textContent = "Firmware auf der Kamera: warte auf Geräteantwort …";
+    versionTail = "";
+    log("Programmer für die serielle Konsole auswählen …");
+    try {
+      const port = await requestProgrammerPort($("connection").value);
+      monitor = new SerialMonitor({
+        onText: serialText,
+        onClose(error) {
+          monitor = null;
+          $("serialState").textContent = "Nicht verbunden";
+          log(error ? "Serielle Verbindung beendet: " + (error.message || String(error)) : "Serielle Verbindung getrennt.");
+          setBusy(false);
+        }
+      });
+      await monitor.open(port);
+      if (!monitor?.running) return;
+      $("serialState").textContent = "Verbunden · " + ($("connection").value === "usb" ? "Android USB" : "Web Serial") + " · 115200 Baud";
+      log("Konsole verbunden. Firmwareversion und OTA-Status werden abgefragt.\n");
+      setBusy(true);
+      await readDeviceStatus();
+    } catch (error) {
+      monitor = null;
+      $("serialState").textContent = "Nicht verbunden";
+      log("Konsole: " + (error?.message || String(error)));
+      setBusy(false);
+    }
+  }
+  async function disconnectMonitor() {
+    $("monitorDisconnect").disabled = true;
+    $("monitorStatus").disabled = true;
+    if (monitor) await monitor.close();
   }
   function hex(buffer) {
     return [...new Uint8Array(buffer)].map(b => b.toString(16).padStart(2, "0")).join("");
@@ -274,6 +343,13 @@
     showPlatformSupport();
   });
   $("probe").addEventListener("click", probe);
+  $("monitorConnect").addEventListener("click", connectMonitor);
+  $("monitorDisconnect").addEventListener("click", disconnectMonitor);
+  $("monitorStatus").addEventListener("click", readDeviceStatus);
+  $("clearConsole").addEventListener("click", () => setStatus(""));
+  $("autoScroll").addEventListener("change", () => {
+    if ($("autoScroll").checked) status.scrollTop = status.scrollHeight;
+  });
 
   $("confirmErase").addEventListener("change", () => {
     $("install").disabled = busy || !$("confirmErase").checked;

@@ -4,6 +4,7 @@ import { webcrypto } from "node:crypto";
 import test from "node:test";
 import vm from "node:vm";
 import { defaultConnection, requestProgrammerPort } from "../docs/serial-port.mjs";
+import { SerialMonitor } from "../docs/serial-monitor.mjs";
 
 function usbDevice() {
   const calls = [];
@@ -129,11 +130,12 @@ const assets = new Map([
   ["ota-reset.bin", otaReset]
 ]);
 
-function page({ badHash = false, chip = "ESP32", failWrite = false, corruptAsset = "" } = {}) {
+function page({ badHash = false, chip = "ESP32", failWrite = false, corruptAsset = "", port = {}, pickerError } = {}) {
   const events = [];
   const elements = new Map();
   const element = id => {
-    if (!elements.has(id)) elements.set(id, { value: id === "baud" ? "460800" : "serial", checked: false,
+    if (!elements.has(id)) elements.set(id, { value: id === "baud" ? "460800" : "serial", checked: id === "autoScroll",
+      scrollTop: 0, scrollHeight: 2000,
       disabled: false, textContent: "", listeners: {}, addEventListener(type, fn) { this.listeners[type] = fn; } });
     return elements.get(id);
   };
@@ -150,8 +152,8 @@ function page({ badHash = false, chip = "ESP32", failWrite = false, corruptAsset
   }
   const context = vm.createContext({
     navigator: nav, document: { getElementById: element }, defaultConnection: () => defaultConnection(nav),
-    requestProgrammerPort(mode) { events.push(["picker", mode]); return Promise.resolve({}); },
-    Transport, ESPLoader, Uint8Array, console,
+    requestProgrammerPort(mode) { events.push(["picker", mode]); return pickerError ? Promise.reject(pickerError) : Promise.resolve(port); },
+    Transport, ESPLoader, SerialMonitor, Uint8Array, console,
     crypto: badHash ? { subtle: { digest: async () => new ArrayBuffer(32) } } : webcrypto,
     async fetch(url) {
       events.push(["fetch"]);
@@ -224,4 +226,115 @@ test("Connection test never downloads or writes firmware; unconfirmed erase is b
   const events = p.events.length;
   await p.element("install").listeners.click();
   assert.equal(p.events.length, events);
+});
+
+function monitorPort({ failOpen = false, failWrite = false } = {}) {
+  const calls = [];
+  let source;
+  const port = {
+    calls,
+    readable: new ReadableStream({ start(controller) { source = controller; } }),
+    writable: new WritableStream({
+      write(bytes) {
+        calls.push(["command", new TextDecoder().decode(bytes)]);
+        if (failWrite) throw new Error("Serial write failed");
+      }
+    }),
+    async open(options) { calls.push(["open", options]); if (failOpen) throw new Error("Port in use"); },
+    async setSignals(signals) { calls.push(["signals", signals]); },
+    async close() {
+      assert.equal(this.readable.locked, false);
+      assert.equal(this.writable.locked, false);
+      calls.push(["close"]);
+    },
+    receive(text) { source.enqueue(typeof text === "string" ? new TextEncoder().encode(text) : text); },
+    unplug() { source.error(new Error("Device disconnected")); }
+  };
+  return port;
+}
+const tick = () => new Promise(resolve => setImmediate(resolve));
+
+test("Live console reads installed version without flashing, reset or OTA check; disconnect unlocks flasher", async () => {
+  const port = monitorPort();
+  const p = page({ port });
+  const connecting = p.element("monitorConnect").listeners.click();
+  assert.deepEqual(p.events, [["picker", "usb"]], "chooser must retain user activation");
+  await connecting;
+  assert.equal(port.calls[0][1].baudRate, 115200);
+  assert.deepEqual(port.calls[1], ["signals", { dataTerminalReady: false, requestToSend: false }]);
+  assert.deepEqual(port.calls.filter(x => x[0] === "command"), [["command", "ota status\n"]]);
+  assert.match(p.element("serialState").textContent, /Verbunden.*115200/);
+  assert.equal(p.element("update").disabled, true);
+  await p.element("update").listeners.click();
+  assert.equal(p.events.length, 1, "monitor must own the port exclusively");
+  port.receive("OTA enabled | firm"); await tick();
+  port.receive("ware 1.4.0 | check at 03:42:15 Europe/Berlin\r\n"); await tick();
+  assert.match(p.element("deviceVersion").textContent, /1\.4\.0$/);
+  assert.match(p.element("status").textContent, /firmware 1\.4\.0/);
+  await p.element("monitorStatus").listeners.click();
+  assert.equal(port.calls.filter(x => x[0] === "command").length, 2);
+  port.receive("M5PoECAM Prusa Connect 1.4.1\n"); await tick();
+  assert.match(p.element("deviceVersion").textContent, /1\.4\.1$/);
+  assert.deepEqual(p.events, [["picker", "usb"]], "no firmware downloads, esptool, resets or writes");
+  await p.element("monitorDisconnect").listeners.click();
+  assert.match(p.element("serialState").textContent, /Nicht verbunden/);
+  assert.equal(p.element("update").disabled, false);
+  assert.equal(p.element("monitorConnect").disabled, false);
+  assert.equal(p.element("monitorStatus").disabled, true);
+  assert.equal(port.calls.at(-1)[0], "close");
+});
+
+test("Serial console decodes split UTF-8, bounds logs, respects paused scrolling and clears", async () => {
+  const port = monitorPort(); const p = page({ port });
+  await p.element("monitorConnect").listeners.click();
+  p.element("clearConsole").listeners.click();
+  const utf8 = new TextEncoder().encode("Größe\n");
+  port.receive(utf8.slice(0, 3)); await tick();
+  port.receive(utf8.slice(3)); await tick();
+  assert.equal(p.element("status").textContent, "Größe\n");
+  assert.equal(p.element("status").scrollTop, 2000);
+  p.element("autoScroll").checked = false;
+  p.element("status").scrollTop = 123;
+  port.receive("x".repeat(110000)); await tick();
+  assert.equal(p.element("status").textContent.length, 100000);
+  assert.equal(p.element("status").scrollTop, 123);
+  p.element("autoScroll").checked = true;
+  p.element("autoScroll").listeners.change();
+  assert.equal(p.element("status").scrollTop, 2000);
+  p.element("clearConsole").listeners.click();
+  assert.equal(p.element("status").textContent, "");
+  await p.element("monitorDisconnect").listeners.click();
+});
+
+test("Cancellation, occupied port, write failure and unplug leave console recoverable", async () => {
+  for (const options of [{ pickerError: new Error("Cancelled") }, { port: monitorPort({ failOpen: true }) }]) {
+    const p = page(options); await p.element("monitorConnect").listeners.click();
+    assert.equal(p.element("update").disabled, false);
+    assert.equal(p.element("monitorConnect").disabled, false);
+    assert.match(p.element("serialState").textContent, /Nicht verbunden/);
+  }
+  const port = monitorPort({ failWrite: true }); const p = page({ port });
+  await p.element("monitorConnect").listeners.click();
+  assert.match(p.element("status").textContent, /Serial write failed/);
+  assert.equal(port.writable.locked, false);
+  port.unplug(); await tick();
+  assert.equal(p.element("update").disabled, false);
+  assert.equal(p.element("monitorStatus").disabled, true);
+  assert.match(p.element("status").textContent, /Device disconnected/);
+  assert.equal(port.calls.at(-1)[0], "close");
+});
+
+test("Live monitor also releases the actual CH9102 WebUSB polyfill after pending USB reads", async () => {
+  const device = usbDevice();
+  const port = await requestProgrammerPort("usb", { usb: { requestDevice: async () => device } });
+  let closed = false;
+  const monitor = new SerialMonitor({ onClose(error) { assert.equal(error, undefined); closed = true; } });
+  await monitor.open(port);
+  await monitor.requestStatus();
+  const command = device.calls.find(x => x[0] === "write");
+  assert.equal(new TextDecoder().decode(Uint8Array.from(command[2])), "ota status\n");
+  await monitor.close();
+  assert.equal(closed, true);
+  assert.equal(device.opened, false);
+  assert.equal(device.calls.at(-1)[0], "close");
 });

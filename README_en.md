@@ -1,22 +1,37 @@
 # PrusaConnectCam – M5Stack PoE-CAM
 
-[Deutsch](README.md) · Firmware **1.4.0** · [Web flasher](https://vothmarkus.github.io/PrusaConnectCam-M5Stack-PoECam/)
+[Deutsch](README.md) · Firmware **1.4.1** · [Web flasher](https://vothmarkus.github.io/PrusaConnectCam-M5Stack-PoECam/)
 
 The **M5Stack Unit PoE CAM U121** (ESP32, W5500, OV2640) uploads JPEG snapshots to Prusa Connect over Ethernet. A PoE switch/injector supplies power. Defaults: one snapshot every 10 seconds, 1600 × 1200, JPEG quality value 20.
 
 **New in 1.4.0:** nightly updates from published GitHub releases, verified HTTPS downloads, startup self-test and bootloader rollback. The working **M5Stack 3.2.2** board package, camera pins and partition layout are retained. The original bootloader is byte-identical.
 
-**Validation status:** firmware builds and software tests pass. Previous firmware 1.3.1 was successfully flashed on a PC and Android, including the higher baud rate according to user feedback. A real OTA cycle and rollback for 1.4.0 still require testing on one camera before deploying to the fleet.
+**1.4.1 is the OTA test release:** the only firmware source change from 1.4.0 is the version number. The web console separately adds live logs without flashing, the installed device version, connection status and a fixed-height scrolling log.
+
+**Validation status:** builds and software tests pass. Installation of 1.4.0 has been confirmed; the first real OTA cycle and rollback still await hardware testing. PC and Android flashing worked with the previous firmware, including the higher baud rate. Test one camera before deploying to the fleet.
+
+### Nightly trial: 1.4.0 → 1.4.1
+
+For the night of **7–8 October 2026**, leave the test camera on **1.4.0**, powered on the PoE network with automatic updates enabled (`OTA enabled` in `ota status`). The regular Latest release 1.4.1 will be checked between **03:00 and 04:00 Europe/Berlin** at the camera's individual scheduled time.
+
+Afterwards, choose **“Konsole verbinden”** and **“Version / OTA-Status”** in the web flasher. Expect `firmware 1.4.1` and verify a fresh Prusa Connect snapshot. Do not USB-flash 1.4.1 or run `ota check` beforehand if testing the nightly schedule. The browser does not need to stay open for OTA.
+
 
 ## Install OTA support once
 
 1. Connect an **external ESP32 Downloader with the matching PoE-CAM adapter**. A USB cable alone is not a programmer. See [M5Stack](https://docs.m5stack.com/en/unit/Unit_PoE_CAM).
 2. Open the [web flasher](https://vothmarkus.github.io/PrusaConnectCam-M5Stack-PoECam/) directly in desktop Chrome/Edge or Android Chrome.
-3. Choose **“Kamera auf 1.4.0 aktualisieren”**. Existing pairing is preserved.
-4. Start the camera on the PoE network. The serial log should show `M5PoECAM Prusa Connect 1.4.0`, `Camera ready`, and `OTA self-test passed` after at least 30 seconds.
+3. Choose **“Kamera auf 1.4.1 aktualisieren”**. Existing pairing is preserved.
+4. Start the camera on the PoE network. The serial log should show `M5PoECAM Prusa Connect 1.4.1`, `Camera ready`, and `OTA self-test passed` after at least 30 seconds.
 5. Verify a fresh snapshot in Prusa Connect.
 
 Every camera needs this initial USB installation once. Later application updates can use Ethernet. Versions up to 1.3.1 cannot update themselves. **Full installation erases pairing** and is unnecessary for a normal update.
+
+### Read device logs without updating
+
+Select the connection type and choose **“Konsole verbinden”** in the web flasher. The console sends only `ota status` and reads at **115200 baud**, independently of the flash baud rate. **“Version / OTA-Status”** repeats that query. The displayed device version comes from received logs, not the firmware offered for flashing.
+
+The log has a fixed height and keeps the last 100,000 characters. Disable automatic scrolling to read earlier lines; **“Konsole leeren”** clears only the browser display. **“Trennen”** releases the port for flashing. Native desktop Serial and Android USB/CH9102 are supported. Older firmware without `ota status` reports its version in the boot log.
 
 ### Android USB
 
@@ -40,7 +55,7 @@ Ethernet and a valid NTP clock are required. If unavailable at the scheduled tim
 4. Write the inactive application slot, verify **size, SHA-256 and ESP32 image**, then select it for the next boot. OTA never writes the merged image, bootloader, partition table or pairing area.
 5. Reboot, run the startup self-test and confirm the new application. Snapshots pause during download/reboot.
 
-A commit to `main` does not trigger installation on cameras. **Publishing a release authorizes rollout.** If the latest release has no `ota-manifest.json`, a 404 is expected and the camera continues normally. The old `V1.2.0` release predates OTA support.
+**Publishing a release authorizes rollout.** Ordinary commits prepare a draft. An explicit version and application SHA-256 in `.github/release-publication.json` authorizes the workflow to publish that exact release as Latest after validation. The 1.4.1 authorization cannot publish later versions. If the latest release has no `ota-manifest.json`, a 404 is expected and the camera continues normally. The old `V1.2.0` release predates OTA support.
 
 ### Self-test and rollback
 
@@ -61,12 +76,12 @@ Use **115200 baud** and terminate each command with a **newline**:
 | `ota off` | Persistently disable automatic nightly updates |
 | `ota on` | Enable nightly updates again |
 
-Manual `ota check` works even when automatic updates are disabled. Rebooting preserves `ota off`. Send these commands to running firmware, not the ROM download mode. The web flasher does not include a serial monitor.
+Manual `ota check` works even when automatic updates are disabled. Rebooting preserves `ota off`. Send these commands to running firmware, not the ROM download mode. The web flasher reads status through “Konsole verbinden” and “Version / OTA-Status”; use an external serial terminal for the other commands.
 
 ## Preparing and testing a release
 
 1. Increase `SW_VERSION` in `mcu_cfg.h` and run `./tools/build.sh`. Commit sources, all images and generated metadata together.
-2. **“Validate firmware and prepare release”** checks the sources/artifacts, tests, hashes and USB flasher. It creates or updates a **draft `v<version>` release** containing the files. Published firmware is never overwritten.
+2. **“Validate firmware and prepare release”** checks the sources/artifacts, tests, hashes and USB flasher. It creates or updates a **draft `v<version>` release** containing the files. Published firmware is never overwritten. Only a matching version and application SHA-256 in `.github/release-publication.json` authorizes publication: the workflow downloads and compares all uploaded assets, then publishes that release as regular Latest. Without a matching request it remains a draft.
 3. Test the new firmware via USB on one camera first. For the first actual OTA transfer, keep another test installation on a lower OTA-capable version, such as 1.4.0.
 4. Publish the tested draft as a normal release during daytime; mark it **Latest** if necessary. Run `ota check` on the test camera and verify the transfer, reboot and snapshots before the nightly window. Use `ota off` beforehand on other OTA-enabled cameras when needed.
 5. Hardware acceptance also includes switching back into the other slot, interrupting a download, and deliberately failing a startup self-test on the test camera. Never publish a deliberately broken test image as the fleet's regular release.
@@ -75,7 +90,7 @@ A startup failure test may use Espressif's `otatool.py` to write a test image to
 
 ## USB recovery and assets
 
-The hardware has 16 MB flash; this project retains its compatible **4 MB layout**. Both OTA slots are **1280 KiB**; firmware 1.4.0 is about 983 KiB.
+The hardware has 16 MB flash; this project retains its compatible **4 MB layout**. Both OTA slots are **1280 KiB**; firmware 1.4.1 is about 983 KiB.
 
 [Images, checksums and metadata](ESP32_PrusaConnectCam_web/build/m5stack.esp32.m5stack_poe_cam/) retain their existing download directory.
 
@@ -125,7 +140,7 @@ Allow DHCP/DNS, NTP **UDP 123** to `pool.ntp.org` or `time.nist.gov`, and HTTPS 
 
 **October 2026 upload repair:** the old `webcam.connect.prusa3d.com/c/snapshot` endpoint returned 301. Firmware now uses `https://camera-service.prusa3d.com/c/snapshot`, checks HTTP status and timeouts, and refuses redirects carrying camera credentials. GTS Root R1/R4 were added alongside ISRG Root X1; ISRG Root X1 had not expired.
 
-**1.3.0 sensor regression:** an unintended change from M5Stack 3.2.2 to Espressif 3.2.0 selected a different SDK. Version 1.3.1 restored the original package and operation was confirmed. Eight blinks and `Camera probe failed ... 0x105` indicate a sensor problem before HTTPS. Version 1.4.0 retains the restored ESP-IDF `v5.4.2-25-g858a988d6e`.
+**1.3.0 sensor regression:** an unintended change from M5Stack 3.2.2 to Espressif 3.2.0 selected a different SDK. Version 1.3.1 restored the original package and operation was confirmed. Eight blinks and `Camera probe failed ... 0x105` indicate a sensor problem before HTTPS. Version 1.4.1 retains the restored ESP-IDF `v5.4.2-25-g858a988d6e`.
 
 ## Build and software tests
 
@@ -149,9 +164,11 @@ Linux test dependencies: GCC/G++, Bash, OpenSSL development headers (`libssl-dev
 ./tests/run.sh
 node --test tests/web_flasher_test.mjs
 python3 tools/check_release.py
+python3 tests/release_publication_test.py
+python3 tools/release_publication.py
 ```
 
-Tests cover HTTP/QR/EEPROM, real QR decoding and allocation failures, OTA version/schedule/redirect policies, the production streaming logic including SHA-256/truncation/write failures, Android USB and recovery ordering. AddressSanitizer/UndefinedBehaviorSanitizer are enabled. If LeakSanitizer is unavailable: `ASAN_OPTIONS=detect_leaks=0 ./tests/run.sh`.
+Tests cover HTTP/QR/EEPROM, real QR decoding and allocation failures, OTA version/schedule/redirect policies, the production streaming logic including SHA-256/truncation/write failures, Android USB, serial console lifecycle and recovery ordering. Release authorization checks the exact version and application digest. AddressSanitizer/UndefinedBehaviorSanitizer are enabled. If LeakSanitizer is unavailable: `ASAN_OPTIONS=detect_leaks=0 ./tests/run.sh`.
 
 These checks do not emulate complete ESP32 hardware. Cold boot, actual OTA, both slots, rollback, Prusa uploads and retained pairing additionally require device testing.
 
