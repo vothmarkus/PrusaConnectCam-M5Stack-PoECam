@@ -3,101 +3,251 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>PrusaConnectCam – M5Stack PoE-CAM Web-Flasher</title>
-  <meta name="description" content="Web-Flasher für PrusaConnectCam auf der M5Stack Unit PoE CAM.">
+  <meta name="theme-color" content="#0c111a">
+  <title>PrusaConnectCam – Firmware &amp; Konsole</title>
+  <meta name="description" content="M5Stack PoE-CAM aktualisieren, Firmwareversion auslesen und das Geräteprotokoll live verfolgen.">
   <style>
-    :root { color-scheme: light dark; font-family: system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
-    body { margin:0; background:#111827; color:#f9fafb; }
-    main { max-width:860px; margin:0 auto; padding:32px 18px 56px; }
-    h1 { font-size:clamp(1.8rem,5vw,2.7rem); margin-bottom:.35rem; }
-    h2 { margin-top:0; font-size:1.25rem; }
-    p,li { line-height:1.55; }
-    .muted { color:#cbd5e1; }
-    .card { background:#1f2937; border:1px solid #374151; border-radius:16px; padding:20px; margin:18px 0; }
-    .safe { border-color:#166534; }
-    .danger { border-color:#991b1b; }
-    button,select { font:inherit; }
-    button { border:0; border-radius:10px; padding:12px 16px; font-weight:700; cursor:pointer; }
-    button:disabled { opacity:.5; cursor:not-allowed; }
-    .update { background:#22c55e; color:#052e16; }
-    .install { background:#ef4444; color:white; }
-    .secondary { background:#475569; color:white; }
-    .row { display:flex; gap:12px; flex-wrap:wrap; align-items:center; }
-    label { display:flex; gap:8px; align-items:center; }
-    progress { width:100%; height:18px; margin-top:14px; }
-    #status { white-space:pre-wrap; overflow-wrap:anywhere; background:#0b1020; border-radius:10px; padding:12px; box-sizing:border-box; height:clamp(220px,40vh,380px); overflow:auto; }
-    code { background:#0b1020; padding:.15em .35em; border-radius:5px; }
-    a { color:#93c5fd; }
-    .warning { color:#fecaca; }
-    .ok { color:#86efac; }
-    .info { color:#bfdbfe; }
+    :root {
+      color-scheme:dark; font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+      --bg:#0c111a; --panel:#141c28; --border:#2a3545; --text:#edf2f8; --muted:#a5b3c7;
+      --accent:#ff995c; --green:#80dfb0; --red:#ffaca8;
+    }
+    * { box-sizing:border-box; }
+    body { margin:0; color:var(--text); background:radial-gradient(ellipse at 75% 0%,#e4763010,transparent 45rem),var(--bg); }
+    main { max-width:1180px; margin:auto; padding:0 28px 32px; }
+    a { color:var(--muted); text-decoration:none; }
+    a:hover { color:var(--text); }
+    button,select,input { font:inherit; }
+    button,a,summary,select,input { -webkit-tap-highlight-color:transparent; }
+    :focus-visible { outline:3px solid var(--accent); outline-offset:4px; }
+    .icon { width:20px; height:20px; flex:none; fill:none; stroke:currentColor; stroke-width:1.7; stroke-linecap:round; stroke-linejoin:round; }
+    .brand-icon { width:38px; height:38px; color:var(--accent); background:#ff995c12; border:1px solid #ff995c30; border-radius:11px; display:grid; place-items:center; }
+    .topbar { min-height:86px; display:flex; align-items:center; justify-content:space-between; gap:16px; border-bottom:1px solid var(--border); }
+    .brand { display:flex; align-items:center; gap:12px; font-size:16px; font-weight:750; letter-spacing:-.3px; }
+    .repo-link { display:inline-flex; align-items:center; gap:7px; font-size:13px; }
+    .hero { padding:36px 0 28px; display:flex; align-items:center; justify-content:space-between; gap:20px; }
+    .eyebrow { margin:0 0 8px; color:var(--accent); font-size:11px; font-weight:750; letter-spacing:1.5px; text-transform:uppercase; }
+    h1 { margin:0; font-size:clamp(28px,4vw,40px); font-weight:750; line-height:1.15; letter-spacing:-1.3px; }
+    .subtitle { margin:12px 0 0; color:var(--muted); font-size:14px; line-height:1.6; }
+    .version-badge { display:flex; align-items:center; gap:10px; padding:12px 16px; border:1px solid var(--border); border-radius:12px; background:var(--panel); flex:none; }
+    .version-badge .icon { color:var(--accent); }
+    .version-badge small { display:block; color:var(--muted); font-size:11px; margin-bottom:3px; }
+    .version-badge strong { font-size:16px; font-weight:650; }
+    .workspace { display:grid; grid-template-columns:minmax(310px,360px) minmax(0,1fr); gap:20px; align-items:start; }
+    .sidebar { display:grid; gap:18px; min-width:0; }
+    .panel { background:var(--panel); border:1px solid var(--border); border-radius:16px; overflow:hidden; }
+    .panel-body { padding:22px; }
+    .panel-title { display:flex; align-items:center; gap:10px; margin-bottom:9px; }
+    .panel-title .icon { color:var(--muted); }
+    h2 { font-size:17px; font-weight:650; letter-spacing:-.25px; margin:0; }
+    p { font-size:13px; line-height:1.6; }
+    .muted { color:var(--muted); }
+    .description { color:var(--muted); margin:0 0 20px; }
+    .field { display:grid; gap:8px; margin-bottom:16px; color:var(--muted); font-size:12px; font-weight:600; }
+    select { width:100%; min-height:44px; padding:9px 12px; border:1px solid #3b485b; border-radius:9px; background:#0f1621; color:var(--text); font-size:13px; cursor:pointer; }
+    button { min-height:44px; padding:10px 14px; border:1px solid transparent; border-radius:9px; font-size:13px; font-weight:650; cursor:pointer; display:inline-flex; align-items:center; justify-content:center; gap:8px; transition:background .15s,border-color .15s; }
+    button:disabled { opacity:.45; cursor:not-allowed; }
+    .full { width:100%; }
+    .secondary { background:#202c3d; border-color:#37465c; color:var(--text); }
+    .secondary:hover:not(:disabled) { background:#2b3b50; border-color:#526682; }
+    .update { background:var(--accent); color:#211008; box-shadow:0 3px 12px #ff995c12; }
+    .update:hover:not(:disabled) { background:#ffae7d; }
+    .install { background:#451f28; border-color:#823743; color:#ffbdbb; }
+    .install:hover:not(:disabled) { background:#642c37; }
+    .ghost { background:transparent; border-color:var(--border); color:var(--muted); }
+    .ghost:hover:not(:disabled) { color:var(--text); background:#202c3d; }
+    .micro { font-size:11px; line-height:1.55; color:var(--muted); margin:10px 0 0; }
+    #platformInfo { font-size:12px; line-height:1.55; margin:0 0 16px; }
+    .info { color:#a7c8ef; }
+    .warning { color:var(--red); }
+    .safe-label { display:inline-flex; align-items:center; gap:7px; font-size:11px; font-weight:600; color:var(--green); margin:0 0 18px; }
+    .safe-label .icon { width:16px; height:16px; }
+    .advanced { border-top:1px solid var(--border); }
+    summary { list-style:none; cursor:pointer; min-height:48px; padding:15px 22px; color:var(--muted); font-size:12px; font-weight:600; display:flex; align-items:center; justify-content:space-between; gap:12px; }
+    summary::-webkit-details-marker { display:none; }
+    summary .chevron { width:16px; height:16px; transition:transform .15s; }
+    details[open]>summary .chevron { transform:rotate(180deg); }
+    summary:hover { color:var(--text); }
+    .advanced-body { padding:0 22px 22px; }
+    .advanced-body p { margin:0 0 16px; font-size:12px; }
+    .check-label { display:flex; align-items:flex-start; gap:9px; font-size:12px; line-height:1.55; color:var(--muted); }
+    input[type=checkbox] { width:16px; height:16px; margin:2px 0 0; accent-color:var(--accent); flex:none; }
+    .advanced-body button { margin-top:16px; font-size:12px; }
+    .console { min-width:0; }
+    .console-head { padding:22px 22px 18px; display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; }
+    .console-head .panel-title { margin:0; }
+    .connection-state { margin:0; display:flex; align-items:center; gap:7px; font-size:11px; line-height:1.5; color:var(--muted); }
+    .connection-state::before { content:""; width:7px; height:7px; border-radius:50%; background:#718096; flex:none; }
+    .connection-state.is-connected { color:var(--green); }
+    .connection-state.is-connected::before { background:var(--green); box-shadow:0 0 0 3px #80dfb015; }
+    .device-info { display:grid; grid-template-columns:1fr auto; gap:16px; padding:0 22px 18px; }
+    .device-info small { display:block; font-size:11px; color:var(--muted); margin-bottom:5px; }
+    .device-info strong { font-size:14px; font-weight:550; overflow-wrap:anywhere; }
+    #deviceVersion { color:var(--text); }
+    .console-actions { display:flex; flex-wrap:wrap; gap:8px; padding:0 22px 20px; }
+    .console-actions button { font-size:12px; }
+    .log-toolbar { display:flex; justify-content:space-between; gap:8px; align-items:center; padding:10px 18px; border-top:1px solid var(--border); border-bottom:1px solid var(--border); background:#0f1621; }
+    .log-toolbar .check-label { align-items:center; font-size:11px; }
+    .log-toolbar input { margin:0; }
+    .log-toolbar button { min-height:34px; font-size:11px; padding:7px 10px; border:0; }
+    .log-toolbar button .icon { width:15px; height:15px; }
+    #status { margin:0; padding:18px 20px; height:clamp(280px,42vh,420px); overflow:auto; overscroll-behavior:contain; white-space:pre-wrap; overflow-wrap:anywhere; background:#090e16; color:#c8d4e6; font:12px/1.85 ui-monospace,SFMono-Regular,Consolas,"Liberation Mono",monospace; scrollbar-color:#435269 #090e16; }
+    .console-foot { padding:13px 20px 16px; border-top:1px solid var(--border); }
+    .progress-label { color:var(--muted); font-size:10px; letter-spacing:.2px; }
+    progress { display:block; appearance:none; width:100%; height:4px; margin:8px 0 0; border:0; border-radius:3px; overflow:hidden; background:#293345; accent-color:var(--accent); }
+    progress::-webkit-progress-bar { background:#293345; }
+    progress::-webkit-progress-value { background:var(--accent); }
+    progress::-moz-progress-bar { background:var(--accent); }
+    .console-note { margin:12px 0 0; font-size:11px; line-height:1.55; color:var(--muted); }
+    .help { margin-top:22px; border:1px solid var(--border); border-radius:12px; background:#111824; }
+    .help summary { font-size:13px; padding:17px 20px; }
+    .help-content { display:grid; grid-template-columns:1fr 1fr; gap:28px; padding:0 20px 20px; }
+    .help-content h3 { font-size:12px; margin:0 0 8px; font-weight:650; }
+    .help-content p { margin:0; font-size:12px; color:var(--muted); line-height:1.7; }
+    .footer { display:flex; justify-content:space-between; align-items:center; gap:14px; padding:22px 2px 0; color:var(--muted); font-size:11px; }
+    .footer span { display:inline-flex; align-items:center; gap:7px; }
+    .footer .icon { width:14px; height:14px; }
+    .footer-links { display:flex; gap:18px; }
+    @media(max-width:860px) {
+      .workspace { grid-template-columns:minmax(260px,310px) minmax(0,1fr); gap:16px; }
+      .panel-body,.console-head { padding:18px; }
+      .device-info { padding:0 18px 18px; }
+      .console-actions { padding:0 18px 18px; }
+      .device-info { grid-template-columns:1fr; }
+      .device-info .console-speed { display:none; }
+    }
+    @media(max-width:700px) {
+      main { padding:0 16px 24px; }
+      .topbar { min-height:74px; }
+      .brand { font-size:14px; gap:9px; }
+      .brand-icon { width:34px; height:34px; }
+      .repo-link { font-size:12px; }
+      .hero { padding:28px 0 24px; align-items:flex-start; flex-direction:column; gap:18px; }
+      h1 { font-size:32px; }
+      .subtitle { font-size:13px; }
+      .version-badge { padding:9px 13px; gap:8px; }
+      .version-badge small { display:inline; margin-right:7px; font-size:11px; }
+      .version-badge strong { font-size:13px; }
+      .version-badge .icon { width:17px; height:17px; }
+      .workspace { grid-template-columns:minmax(0,1fr); gap:18px; }
+      .sidebar { gap:16px; }
+      .device-info { grid-template-columns:1fr auto; }
+      .device-info .console-speed { display:block; }
+      .console-actions #monitorConnect { width:100%; }
+      .console-actions #monitorDisconnect,.console-actions #monitorStatus { flex:1; }
+      .help-content { grid-template-columns:1fr; gap:20px; }
+      .footer { align-items:flex-start; flex-direction:column; gap:12px; }
+    }
+    @media(prefers-reduced-motion:reduce) { button,summary .chevron { transition:none; } }
   </style>
 </head>
 <body>
+<svg xmlns="http://www.w3.org/2000/svg" style="display:none" aria-hidden="true">
+  <symbol id="i-camera" viewBox="0 0 24 24"><path d="M8 5l1.5-2h5L16 5h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2z"/><circle cx="12" cy="13" r="4"/></symbol>
+  <symbol id="i-link" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-2 2M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l2-2"/></symbol>
+  <symbol id="i-chip" viewBox="0 0 24 24"><rect x="5" y="5" width="14" height="14" rx="3"/><path d="M9 9h6v6H9zM9 2v3m6-3v3M9 19v3m6-3v3M2 9h3m-3 6h3m14-6h3m-3 6h3"/></symbol>
+  <symbol id="i-terminal" viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="16" rx="3"/><path d="M6 9l3 3-3 3m7 0h5"/></symbol>
+  <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 3v12m-5-5l5 5 5-5M4 16v4a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-4"/></symbol>
+  <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 2l8 3v6c0 5-4 9-8 11-4-2-8-6-8-11V5zM8 12l3 3 5-6"/></symbol>
+  <symbol id="i-chevron" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></symbol>
+  <symbol id="i-clear" viewBox="0 0 24 24"><path d="M9 4h6m-11 4h16M6 8l1 12h10l1-12M10 11v6m4-6v6"/></symbol>
+  <symbol id="i-external" viewBox="0 0 24 24"><path d="M14 3h7v7m0-7L10 14M10 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-5"/></symbol>
+</svg>
 <main>
-  <h1>PrusaConnectCam Web-Flasher</h1>
-  <p class="muted">M5Stack Unit PoE CAM · Firmware <span data-firmware-version>1.4.1</span> · ESP32</p>
+  <header class="topbar">
+    <div class="brand"><span class="brand-icon"><svg class="icon" aria-hidden="true"><use href="#i-camera"/></svg></span>PrusaConnectCam</div>
+    <a class="repo-link" href="https://github.com/vothmarkus/PrusaConnectCam-M5Stack-PoECam" target="_blank" rel="noopener noreferrer">GitHub<svg class="icon" aria-hidden="true"><use href="#i-external"/></svg></a>
+  </header>
 
-  <div class="card">
-    <h2>Vorbereitung</h2>
-    <ol>
-      <li>PoE-CAM über einen geeigneten ESP32-Downloader/PoE-CAM-Adapter mit dem Computer oder Android-Gerät verbinden.</li>
-      <li>Desktop: Chrome oder Edge verwenden. Android: die Seite direkt in Chrome öffnen und einen USB-Host/OTG-Adapter mit Datenkabel verwenden.</li>
-      <li>Für bereits gekoppelte Kameras ausschließlich <strong>Update</strong> verwenden.</li>
-    </ol>
-    <div class="row">
-      <label>Verbindung
-        <select id="connection">
-          <option value="serial">PC / natives Web Serial</option>
-          <option value="usb">Android USB (CH9102)</option>
-        </select>
-      </label>
-      <label>Flash-Baudrate
-        <select id="baud">
-          <option value="460800" selected>460800</option>
-          <option value="115200">115200</option>
-        </select>
-      </label>
+  <section class="hero" aria-labelledby="pageTitle">
+    <div>
+      <p class="eyebrow">M5Stack Unit PoE CAM</p>
+      <h1 id="pageTitle">Firmware &amp; Konsole</h1>
+      <p class="subtitle">Deine Kamera aktualisieren und das Geräteprotokoll live mitlesen.</p>
     </div>
-    <p id="platformInfo" class="muted">Browser-Unterstützung wird geprüft …</p>
-    <button id="probe" class="secondary">Downloader erkennen</button>
-    <p class="muted">Prüft die Verbindung und startet die Kamera anschließend neu. Firmware und Kopplung werden dabei nicht überschrieben.</p>
-  </div>
+    <div class="version-badge"><svg class="icon" aria-hidden="true"><use href="#i-chip"/></svg><div><small>Verfügbare Firmware</small><strong><span data-firmware-version>1.4.1</span></strong></div></div>
+  </section>
 
-  <div class="card safe">
-    <h2>Bestehende Kamera aktualisieren</h2>
-    <p>Installiert Firmware und den passenden Bootloader. Aktiviert anschließend die per USB geschriebene Firmware, auch nach vorherigen OTA-Updates. <strong>Die gespeicherte Kopplung bleibt erhalten.</strong></p>
-    <p>Ab Version 1.4.0 prüft die Kamera jede Nacht zwischen 03:00 und 04:00 Uhr auf neuere GitHub-Releases und installiert passende Updates über Ethernet.</p>
-    <button id="update" class="update">Kamera auf <span data-firmware-version>1.4.1</span> aktualisieren</button>
-  </div>
+  <div class="workspace">
+    <div class="sidebar">
+      <section class="panel" aria-labelledby="connectionTitle">
+        <div class="panel-body">
+          <div class="panel-title"><svg class="icon" aria-hidden="true"><use href="#i-link"/></svg><h2 id="connectionTitle">Verbindung</h2></div>
+          <p class="description">Downloader anschließen und USB-Zugang wählen.</p>
+          <label class="field" for="connection">USB-Zugang
+            <select id="connection">
+              <option value="serial">PC / Web Serial</option>
+              <option value="usb">Android USB (CH9102)</option>
+            </select>
+          </label>
+          <label class="field" for="baud">Geschwindigkeit beim Flashen
+            <select id="baud">
+              <option value="460800" selected>460800 Baud</option>
+              <option value="115200">115200 Baud</option>
+            </select>
+          </label>
+          <p id="platformInfo" class="muted">Browser-Unterstützung wird geprüft …</p>
+          <button id="probe" class="secondary full">Downloader erkennen</button>
+          <p class="micro">Prüft den Downloader und startet die Kamera neu.</p>
+        </div>
+      </section>
 
-  <div class="card danger">
-    <h2>Vollständige Neuinstallation</h2>
-    <p class="warning"><strong>Achtung:</strong> Löscht den gesamten Flash und schreibt das 4-MB-Merged-Image nach <code>0x0</code>. Token/Fingerprint und Kopplung gehen verloren.</p>
-    <label><input id="confirmErase" type="checkbox"> Ich verstehe, dass die gespeicherte Kopplung gelöscht wird.</label>
-    <p><button id="install" class="install" disabled>Flash löschen und <span data-firmware-version>1.4.1</span> neu installieren</button></p>
-  </div>
-
-  <div class="card">
-    <h2>Serielle Konsole und Status</h2>
-    <p>Live-Protokoll lesen, ohne ein Update zu installieren. Die Konsole verwendet immer 115200 Baud und fragt beim Verbinden die laufende Firmwareversion und den OTA-Status ab.</p>
-    <div class="row">
-      <button id="monitorConnect" class="secondary">Konsole verbinden</button>
-      <button id="monitorDisconnect" class="secondary" disabled>Trennen</button>
-      <button id="monitorStatus" class="secondary" disabled>Version / OTA-Status</button>
+      <section class="panel" aria-labelledby="updateTitle">
+        <div class="panel-body">
+          <div class="panel-title"><svg class="icon" aria-hidden="true"><use href="#i-download"/></svg><h2 id="updateTitle">Firmware aktualisieren</h2></div>
+          <p class="description">Installiert die aktuelle Firmware auf deiner Kamera.</p>
+          <p class="safe-label"><svg class="icon" aria-hidden="true"><use href="#i-shield"/></svg>Kopplung und Einstellungen bleiben erhalten</p>
+          <button id="update" class="update full">Auf <span data-firmware-version>1.4.1</span> aktualisieren<svg class="icon" aria-hidden="true"><use href="#i-download"/></svg></button>
+        </div>
+        <details class="advanced">
+          <summary>Vollständige Neuinstallation<svg class="icon chevron" aria-hidden="true"><use href="#i-chevron"/></svg></summary>
+          <div class="advanced-body">
+            <p class="warning">Löscht den gesamten Flash einschließlich Kopplung und Einstellungen. Die Kamera muss danach neu gekoppelt werden.</p>
+            <label class="check-label"><input id="confirmErase" type="checkbox">Ich verstehe, dass Kopplung und Einstellungen gelöscht werden.</label>
+            <button id="install" class="install full" disabled><span data-firmware-version>1.4.1</span> vollständig neu installieren</button>
+          </div>
+        </details>
+      </section>
     </div>
-    <p id="serialState" class="muted" role="status">Nicht verbunden</p>
-    <p id="deviceVersion" class="info">Firmware auf der Kamera: noch nicht ausgelesen</p>
-    <div class="row">
-      <label><input id="autoScroll" type="checkbox" checked> Automatisch nach unten scrollen</label>
-      <button id="clearConsole" class="secondary">Konsole leeren</button>
-    </div>
-    <progress id="progress" value="0" max="100"></progress>
-    <pre id="status" tabindex="0" aria-label="Geräteprotokoll und Flash-Status">Bereit.</pre>
-    <p class="muted">Für den OTA-Nachttest die Kamera auf 1.4.0 belassen. Nach der Nachtprüfung zeigt „Version / OTA-Status“, ob 1.4.1 installiert wurde. Vor dem Flashen die Konsole mit „Trennen“ schließen. Angezeigt werden die letzten 100.000 Zeichen; die Seite zum Mitlesen geöffnet lassen.</p>
+
+    <section class="panel console" aria-labelledby="consoleTitle">
+      <div class="console-head">
+        <div class="panel-title"><svg class="icon" aria-hidden="true"><use href="#i-terminal"/></svg><h2 id="consoleTitle">Geräteprotokoll</h2></div>
+        <p id="serialState" class="connection-state" role="status">Nicht verbunden</p>
+      </div>
+      <div class="device-info">
+        <div><small>Zuletzt gelesene Firmware auf der Kamera</small><strong id="deviceVersion">Noch nicht ausgelesen</strong></div>
+        <div class="console-speed"><small>Konsole</small><strong>115200 Baud</strong></div>
+      </div>
+      <div class="console-actions">
+        <button id="monitorConnect" class="secondary">Konsole verbinden</button>
+        <button id="monitorDisconnect" class="ghost" disabled>Trennen</button>
+        <button id="monitorStatus" class="ghost" disabled>Version / OTA-Status</button>
+      </div>
+      <div class="log-toolbar">
+        <label class="check-label"><input id="autoScroll" type="checkbox" checked>Automatisch scrollen</label>
+        <button id="clearConsole" class="ghost" aria-label="Konsole leeren"><svg class="icon" aria-hidden="true"><use href="#i-clear"/></svg>Leeren</button>
+      </div>
+      <pre id="status" tabindex="0" aria-label="Geräteprotokoll und Flash-Status">Bereit. Verbinde die Konsole oder starte ein Firmware-Update.</pre>
+      <div class="console-foot">
+        <span class="progress-label">Flash-Fortschritt</span>
+        <progress id="progress" value="0" max="100" aria-label="Flash-Fortschritt"></progress>
+        <p class="console-note">Die Konsole liest das Protokoll und fragt den OTA-Status ab. Zum Flashen zuerst „Trennen“ wählen.</p>
+      </div>
+    </section>
   </div>
 
-  <p class="muted">Die Firmwaredateien werden vor dem Flashen per SHA-256 geprüft. Diese Seite sendet keine Zugangsdaten oder Kamera-Token.</p>
+  <details class="help">
+    <summary>Anschluss &amp; Hilfe<svg class="icon chevron" aria-hidden="true"><use href="#i-chevron"/></svg></summary>
+    <div class="help-content">
+      <div><h3>Was brauche ich?</h3><p>Einen ESP32-Downloader mit passendem PoE-CAM-Adapter und ein USB-Datenkabel. Am PC Chrome oder Edge verwenden. Auf Android die Seite direkt in Chrome öffnen und einen USB-Host/OTG-Adapter verwenden.</p></div>
+      <div><h3>Mein Downloader wird nicht angezeigt</h3><p>Auf Android „Android USB (CH9102)“ wählen und „USB-Enhanced-SERIAL CH9102“ freigeben. Bei einer leeren Auswahl OTG und Datenkabel prüfen. Ältere CP2104-Downloader am PC verwenden. Bei Flash-Problemen auf 115200 Baud wechseln.</p></div>
+    </div>
+  </details>
+  <footer class="footer">
+    <span><svg class="icon" aria-hidden="true"><use href="#i-shield"/></svg>Firmware wird vor dem Schreiben per SHA-256 geprüft.</span>
+    <div class="footer-links"><a href="https://github.com/vothmarkus/PrusaConnectCam-M5Stack-PoECam#readme" target="_blank" rel="noopener noreferrer">Dokumentation</a><a href="https://github.com/vothmarkus/PrusaConnectCam-M5Stack-PoECam/releases/latest" target="_blank" rel="noopener noreferrer">Release</a></div>
+  </footer>
 </main>
 
 <script type="module">
@@ -151,12 +301,12 @@
     if ($("connection").value === "usb") {
       info.className = navigator.usb ? "info" : "warning";
       info.textContent = navigator.usb
-        ? "USB-Zugang für M5Stack-Downloader mit CH9102. In der Geräteauswahl USB-Enhanced-SERIAL CH9102 wählen. Wenn kein Gerät erscheint: USB-Host/OTG, Datenkabel und USB-Freigabe prüfen. Ältere CP2104-Downloader bitte am PC verwenden."
+        ? "USB-Zugriff für CH9102 verfügbar."
         : "Dieser Browser bietet keinen USB-Zugriff. Bitte die Seite direkt in Chrome über HTTPS öffnen.";
     } else {
       info.className = navigator.serial ? "info" : "warning";
       info.textContent = navigator.serial
-        ? "Native serielle Geräteauswahl. Zeigt Android hier nur Bluetooth-Geräte, oben auf Android USB (CH9102) wechseln."
+        ? "Web Serial ist bereit."
         : "Dieser Browser bietet kein Web Serial. Am PC Chrome oder Edge verwenden; auf Android den USB-Zugang wählen.";
     }
   }
@@ -167,6 +317,10 @@
   }
   function log(message) { appendLog("\n" + message); }
   function setStatus(message) { status.textContent = message; }
+  function setSerialState(message, connected = false) {
+    $("serialState").textContent = message;
+    $("serialState").className = "connection-state" + (connected ? " is-connected" : "");
+  }
   function setBusy(value) {
     busy = value;
     $("update").disabled = value;
@@ -184,7 +338,7 @@
     appendLog(text.replace(/\r/g, ""));
     const combined = versionTail + text;
     const matches = [...combined.matchAll(/(?:M5PoECAM Prusa Connect |firmware )(\d+\.\d+\.\d+)(?=\s|\||$)/g)];
-    if (matches.length) $("deviceVersion").textContent = "Zuletzt gelesene Firmware auf der Kamera: " + matches.at(-1)[1];
+    if (matches.length) $("deviceVersion").textContent = matches.at(-1)[1];
     versionTail = combined.slice(-512);
   }
   async function readDeviceStatus() {
@@ -195,8 +349,8 @@
   async function connectMonitor() {
     if (busy) return;
     setBusy(true);
-    $("serialState").textContent = "Verbindung wird geöffnet …";
-    $("deviceVersion").textContent = "Firmware auf der Kamera: warte auf Geräteantwort …";
+    setSerialState("Verbindung wird geöffnet …");
+    $("deviceVersion").textContent = "Warte auf Geräteantwort …";
     versionTail = "";
     log("Programmer für die serielle Konsole auswählen …");
     try {
@@ -205,20 +359,20 @@
         onText: serialText,
         onClose(error) {
           monitor = null;
-          $("serialState").textContent = "Nicht verbunden";
+          setSerialState("Nicht verbunden");
           log(error ? "Serielle Verbindung beendet: " + (error.message || String(error)) : "Serielle Verbindung getrennt.");
           setBusy(false);
         }
       });
       await monitor.open(port);
       if (!monitor?.running) return;
-      $("serialState").textContent = "Verbunden · " + ($("connection").value === "usb" ? "Android USB" : "Web Serial") + " · 115200 Baud";
+      setSerialState("Verbunden · 115200 Baud", true);
       log("Konsole verbunden. Firmwareversion und OTA-Status werden abgefragt.\n");
       setBusy(true);
       await readDeviceStatus();
     } catch (error) {
       monitor = null;
-      $("serialState").textContent = "Nicht verbunden";
+      setSerialState("Nicht verbunden");
       log("Konsole: " + (error?.message || String(error)));
       setBusy(false);
     }
